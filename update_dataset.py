@@ -7,6 +7,13 @@
 
 import os
 import sys
+
+# ── AUTO-RELAUNCH DENGAN C:\penv ──
+PENV_PYTHON = r"C:\penv\Scripts\python.exe"
+if os.path.exists(PENV_PYTHON) and os.path.normpath(sys.executable).lower() != os.path.normpath(PENV_PYTHON).lower():
+    import subprocess
+    sys.exit(subprocess.call([PENV_PYTHON] + sys.argv))
+
 import shutil
 import glob
 import random
