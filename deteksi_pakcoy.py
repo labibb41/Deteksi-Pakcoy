@@ -30,9 +30,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 YOLO_WEIGHTS = os.path.join(BASE_DIR, "exp_pakcoy_yolo26_seg_v4", "weights", "best.pt")
 
 MOBILENET_MODELS = {
-    "MobileNetV2 V1 (Lama)":    os.path.join(BASE_DIR, "mobilenetv2_v1_lama.h5"),
-    "MobileNetV2 V2 (Baru)":    os.path.join(BASE_DIR, "mobilenetv2_v2_baru.h5"),
-    "MobileNetV2 V3 (Terbaru)": os.path.join(BASE_DIR, "mobilenetv2_v3_terbaru.h5"),
+    "MobileNetV2 Murni (Terbaru)": os.path.join(BASE_DIR, "mobilenetv2_pakcoy_murni.h5"),
+    "MobileNetV2 Augmented":        os.path.join(BASE_DIR, "mobilenetv2_pakcoy_augmented.h5"),
+    "MobileNetV2 V3 (Terbaru)":     os.path.join(BASE_DIR, "mobilenetv2_v3_terbaru.h5"),
+    "MobileNetV2 V2 (Baru)":        os.path.join(BASE_DIR, "mobilenetv2_v2_baru.h5"),
+    "MobileNetV2 V1 (Lama)":        os.path.join(BASE_DIR, "mobilenetv2_v1_lama.h5"),
 }
 
 CLASS_NAMES   = ["empty", "etiolasi_berat", "etiolasi_ringan", "normal"]

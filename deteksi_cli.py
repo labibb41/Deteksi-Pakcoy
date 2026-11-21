@@ -29,9 +29,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 YOLO_WEIGHTS = os.path.join(BASE_DIR, "exp_pakcoy_yolo26_seg_v4", "weights", "best.pt")
 
-# DAFTAR MODEL KLASIFIKASI (Model Augmented baru di urutan pertama!)
+# DAFTAR MODEL KLASIFIKASI (Model Murni Baru di urutan pertama!)
 MOBILENET_MODELS = {
-    "Augmented (Baru)": os.path.join(BASE_DIR, "mobilenetv2_pakcoy_augmented.h5"),
+    "Murni (Terbaru)":  os.path.join(BASE_DIR, "mobilenetv2_pakcoy_murni.h5"),
+    "Augmented":        os.path.join(BASE_DIR, "mobilenetv2_pakcoy_augmented.h5"),
     "V3 (Terbaru)":     os.path.join(BASE_DIR, "mobilenetv2_v3_terbaru.h5"),
     "Top Pakcoy V3":    os.path.join(BASE_DIR, "model_top_pakcoy_v3.h5"),
     "Top Pakcoy":       os.path.join(BASE_DIR, "model_top_pakcoy.h5"),
@@ -44,8 +45,8 @@ CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 # ── AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD) ──
 # Bibit secara alami adalah tanaman sehat (normal).
 # Baru dicap etiolasi jika model benar-benar yakin (>= threshold).
-THRESH_ETIOLASI_RINGAN = 0.55  # Keyakinan minimal 55% untuk etiolasi ringan
-THRESH_ETIOLASI_BERAT  = 0.50  # Keyakinan minimal 50% untuk etiolasi berat
+THRESH_ETIOLASI_RINGAN = 0.80  # Keyakinan minimal 55% untuk etiolasi ringan
+THRESH_ETIOLASI_BERAT  = 0.85  # Keyakinan minimal 50% untuk etiolasi berat
 
 # ── WARNA (Format BGR OpenCV) ──
 COLOR_KOTAK_ISI   = (255, 120, 0)   # KOTAK TRAY BERISI: BIRU
@@ -158,9 +159,10 @@ def show_interactive_display(views_dict, orig_shape):
         ord('4'): model_keys[3] if len(model_keys) > 3 else None,
         ord('5'): model_keys[4] if len(model_keys) > 4 else None,
         ord('6'): model_keys[5] if len(model_keys) > 5 else None,
+        ord('7'): model_keys[6] if len(model_keys) > 6 else None,
     }
 
-    current_model = "Augmented (Baru)" if "Augmented (Baru)" in views_dict else model_keys[0]
+    current_model = "Murni (Terbaru)" if "Murni (Terbaru)" in views_dict else model_keys[0]
 
     # State interaktif Zoom & Pan
     state = {
@@ -237,7 +239,9 @@ def show_interactive_display(views_dict, orig_shape):
     print("   👉 Double-Click / [R]     : Reset Zoom kembali ke tampilan penuh", flush=True)
     print("   👉 Tombol '+ / -'         : Zoom In / Zoom Out lewat keyboard", flush=True)
     print("   👉 Tombol Panah           : Geser tampilan", flush=True)
-    print("   👉 Tombol '1' s.d '6'     : Ganti Model MobileNetV2", flush=True)
+    print("   👉 Tombol '1'             : ⭐ Model Murni Terbaru (mobilenetv2_pakcoy_murni.h5)", flush=True)
+    print("   👉 Tombol '2'             : Model Augmented", flush=True)
+    print("   👉 Tombol '3' s.d '7'     : Model V3, Top Pakcoy V3, Top Pakcoy, V2, V1", flush=True)
     print("   👉 Tombol 'ESC' atau 'Q'  : Tutup jendela\n", flush=True)
 
     while True:
