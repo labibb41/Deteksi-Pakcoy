@@ -1,0 +1,44 @@
+# ── Virtual Environment ──────────────────────────
+C:/penv/
+venv/
+.venv/
+env/
+
+# ── Model weights (file besar, simpan terpisah) ──
+*.h5
+*.pt
+*.onnx
+*.tflite
+
+# ── Dataset ZIP (file besar) ─────────────────────
+*.zip
+
+# ── Dataset gambar (terlalu besar untuk GitHub) ──
+dataset_top_v1/
+dataset_top_v2/
+dataset_top_v3/
+dataset_top_colab (1)/
+dataset_baru_atas/
+dataset_baru_samping/
+dataset_split/
+
+# ── Python cache ─────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# ── Jupyter ──────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS files ─────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs & temp ──────────────────────────────────
+*.log
+*.tmp
+runs/
