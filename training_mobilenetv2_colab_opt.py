@@ -87,22 +87,24 @@ for k in KELAS:
     print(f"   🌿 {k:<18}: {n_files} gambar")
 print(f"   📊 Total Keseluruhan : {total_asli} gambar murni")
 
-# ── 3. DATA GENERATOR & AUGMENTASI DINAMIS LEBIH KAYA ──
+# ── 3. DATA GENERATOR & AUGMENTASI BERSIH (REALISTIS) ─
 print("\n" + "=" * 65)
 print("=== [2/6] PERSIAPAN DATA LATIH & VALIDASI (80% / 20%) ===")
 print("=" * 65)
 
+# PENTING: vertical_flip = False! Tanaman pakcoy tumbuh tegak ke atas (arah gravitasi).
+# Jangan dibalik terbalik (akar di atas) agar filter CNN tidak bingung membedakan tinggi batang.
 train_datagen = ImageDataGenerator(
-    rescale            = 1.0 / 255,   # Sinkron dengan deteksi_cli.py
-    rotation_range     = 45,          # Rotasi daun lebih luas agar kenal semua orientasi
-    width_shift_range  = 0.12,        # Geser horizontal
-    height_shift_range = 0.12,        # Geser vertikal
-    horizontal_flip    = True,        # Cermin horizontal
-    vertical_flip      = True,        # Cermin vertikal
-    zoom_range         = 0.15,        # Skala zoom wajar
-    brightness_range   = [0.85, 1.15],# Variasi cahaya lampu/matahari
+    rescale            = 1.0 / 255,   # Sinkron 100% dengan deteksi_cli.py
+    rotation_range     = 15,          # Rotasi wajar daun (maks 15 derajat, tidak boleh miring ekstrem)
+    width_shift_range  = 0.08,        # Geser horizontal sedikit
+    height_shift_range = 0.08,        # Geser vertikal sedikit
+    horizontal_flip    = True,        # Cermin horizontal (kiri-kanan wajar)
+    vertical_flip      = False,       # WAJIB FALSE: Batang tidak boleh jungkir balik
+    zoom_range         = 0.10,        # Skala zoom wajar
+    brightness_range   = [0.85, 1.15],# Variasi pencahayaan lampu/matahari
     fill_mode          = "nearest",
-    validation_split   = 0.20,        # 80% Latih, 20% Uji Validasi
+    validation_split   = 0.20,        # 80% Latih, 20% Validasi
 )
 
 val_datagen = ImageDataGenerator(
@@ -135,24 +137,21 @@ val_gen = val_datagen.flow_from_directory(
 print(f"\n✓ Data Latih (Train)   : {train_gen.samples} gambar")
 print(f"✓ Data Validasi (Val)  : {val_gen.samples} gambar")
 
-# ── 4. SOFT WEIGHTING (MENCEGAH KELAS NORMAL DIANAKTIRIKAN) ─
-# Hitung bobot, lalu di-haluskan (square root) agar Normal tetap punya kekuatan penuh (bobot mendekati 1.0)
-raw_weights = compute_class_weight(
+# ── 4. CLASS WEIGHT BALANCED ALAMI (MEMULIHKAN KELAS ETIOLASI) ──
+# Bobot seimbang penuh: etiolasi_berat (~1.74) dan etiolasi_ringan (~1.24)
+# Bobot tinggi ini WAJIB agar model tidak malas dan tidak mengabaikan etiolasi berat!
+weights = compute_class_weight(
     class_weight="balanced",
     classes=np.unique(train_gen.classes),
     y=train_gen.classes
 )
-# Soft weighting: akar kuadrat dari bobot ekstrim
-soft_weights = np.sqrt(raw_weights)
-# Normalisasi agar rata-rata = 1.0
-soft_weights = soft_weights / np.mean(soft_weights)
-class_weights_dict = dict(enumerate(soft_weights))
+class_weights_dict = dict(enumerate(weights))
 
-print("\n⚖️  Bobot Kelas Teroptimasi (Soft Weighting):")
+print("\n⚖️  Bobot Kelas Alami (Balanced Class Weights):")
 for idx, k in enumerate(KELAS):
     print(f"   👉 {k:<18}: {class_weights_dict[idx]:.2f}")
 
-# ── 5. ARSITEKTUR MOBILENETV2 (KEPALA KLASIFIKASI BARU) ─
+# ── 5. ARSITEKTUR MOBILENETV2 ─────────────────────────
 base_model = MobileNetV2(
     input_shape = (224, 224, 3),
     include_top = False,
@@ -162,19 +161,19 @@ base_model.trainable = False
 
 x = GlobalAveragePooling2D()(base_model.output)
 x = BatchNormalization()(x)
-x = Dropout(0.30)(x)
-x = Dense(256, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+x = Dropout(0.35)(x)
+x = Dense(256, activation="relu")(x)
 x = BatchNormalization()(x)
 x = Dropout(0.20)(x)
 output = Dense(N_KELAS, activation="softmax")(x)
 
 model = Model(inputs=base_model.input, outputs=output)
-# Tanpa label smoothing agar batas Normal vs Etiolasi SANGAT TEGAS
-loss_fn = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.0)
+# Label smoothing moderat 0.06 mencegah overconfidence mayoritas tanpa mengaburkan batas kelas
+loss_fn = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.06)
 
-# ── 6. PHASE 1: WARMUP DENGAN BASE DIBEKUKAN (12 Epoch) ─
+# ── 6. PHASE 1: WARMUP HEAD KLASIFIKASI (15 Epoch) ────
 print("\n" + "=" * 65)
-print("=== [3/6] PHASE 1: WARMUP HEAD KLASIFIKASI (12 Epoch) ===")
+print("=== [3/6] PHASE 1: WARMUP HEAD KLASIFIKASI (15 Epoch) ===")
 print("=" * 65)
 
 model.compile(
@@ -184,7 +183,7 @@ model.compile(
 )
 
 cb_phase1 = [
-    EarlyStopping(monitor="val_accuracy", patience=5, restore_best_weights=True, verbose=1),
+    EarlyStopping(monitor="val_accuracy", patience=6, restore_best_weights=True, verbose=1),
     ModelCheckpoint(BEST_CKPT, monitor="val_accuracy", save_best_only=True, verbose=0),
     ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-6, verbose=1),
 ]
@@ -192,19 +191,21 @@ cb_phase1 = [
 history1 = model.fit(
     train_gen,
     validation_data = val_gen,
-    epochs          = 12,
+    epochs          = 15,
     class_weight    = class_weights_dict,
     callbacks       = cb_phase1,
     verbose         = 1,
 )
 
-# ── 7. PHASE 2: DEEP FINE-TUNING (LAYER 75 KE ATAS) (38 Epoch) ─
+# ── 7. PHASE 2: FINE-TUNING BLOK 14-16 (LAYER 110 KE ATAS) (45 Epoch) ─
 print("\n" + "=" * 65)
-print("=== [4/6] PHASE 2: DEEP FINE-TUNING DARI LAYER 75 ===")
+print("=== [4/6] PHASE 2: FINE-TUNING LAYER 110 KE ATAS (45 Epoch) ===")
 print("=" * 65)
 
 base_model.trainable = True
-fine_tune_at = 75  # Membuka lebih banyak block agar kenal lekuk daun pakcoy
+# Kunci feature extractor dasar (layer 0-109), buka hanya 2 blok teratas (110 ke atas)
+# Ini menjaga kestabilan bobot ImageNet pada dataset ~1000 gambar
+fine_tune_at = 110
 for layer in base_model.layers[:fine_tune_at]:
     layer.trainable = False
 
@@ -213,21 +214,21 @@ for layer in base_model.layers:
         layer.trainable = False
 
 model.compile(
-    optimizer = tf.keras.optimizers.Adam(learning_rate=3e-5), # LR pelan dan presisi
+    optimizer = tf.keras.optimizers.Adam(learning_rate=5e-5),
     loss      = loss_fn,
     metrics   = ["accuracy"],
 )
 
 cb_phase2 = [
-    EarlyStopping(monitor="val_accuracy", patience=10, restore_best_weights=True, verbose=1),
+    EarlyStopping(monitor="val_accuracy", patience=12, restore_best_weights=True, verbose=1),
     ModelCheckpoint(BEST_CKPT, monitor="val_accuracy", save_best_only=True, verbose=0),
-    ReduceLROnPlateau(monitor="val_loss", factor=0.3, patience=3, min_lr=1e-7, verbose=1),
+    ReduceLROnPlateau(monitor="val_loss", factor=0.4, patience=3, min_lr=1e-7, verbose=1),
 ]
 
 history2 = model.fit(
     train_gen,
     validation_data = val_gen,
-    epochs          = 38,
+    epochs          = 45,
     class_weight    = class_weights_dict,
     callbacks       = cb_phase2,
     verbose         = 1,
