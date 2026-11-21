@@ -14,13 +14,11 @@ if os.path.exists(PENV_PYTHON) and os.path.normpath(sys.executable).lower() != o
     import subprocess
     sys.exit(subprocess.call([PENV_PYTHON] + sys.argv))
 
-import shutil
-import glob
-import random
 import json
+import random
+import shutil
 import zipfile
 from datetime import datetime
-from pathlib import Path
 
 # ───────────────────────────────────────────────────────────────
 #  KONFIGURASI PATH
@@ -120,7 +118,7 @@ def merge_new_to_main():
             continue
 
         print(f"\n  Memproses {src_label}...")
-        for cls_name, cnt in counts.items():
+        for cls_name in counts:
             src_cls  = os.path.join(src_folder, cls_name)
             dst_cls  = os.path.join(MAIN_DATASET, cls_name)
             os.makedirs(dst_cls, exist_ok=True)
@@ -204,7 +202,7 @@ def create_train_val_split():
         total_train += len(train_fs)
         total_val   += len(val_fs)
 
-    print(f"\n  ✅ Split selesai!")
+    print("\n  ✅ Split selesai!")
     print(f"     Total Train: {total_train}")
     print(f"     Total Val:   {total_val}")
     print(f"     Output: {SPLIT_OUTPUT}")
@@ -212,8 +210,7 @@ def create_train_val_split():
     # Generate class_names.txt
     cls_file = os.path.join(SPLIT_OUTPUT, "class_names.txt")
     with open(cls_file, "w") as f:
-        for cls in sorted(counts.keys()):
-            f.write(cls + "\n")
+        f.writelines(cls + "\n" for cls in sorted(counts.keys()))
     print(f"     class_names.txt: {cls_file}")
 
 
@@ -242,7 +239,7 @@ def export_for_colab(choice=None):
     if not os.path.isdir(src):
         print(f"  ⚠️  Folder tidak ditemukan: {src}")
         print("  Jalankan Split terlebih dahulu (menu 3)")
-        return None
+        return
 
     print(f"\n  Membuat zip dari: {src}")
     print(f"  Output: {zip_name}")
@@ -253,21 +250,21 @@ def export_for_colab(choice=None):
         for root, dirs, files in os.walk(src):
             dirs.sort()
             for file in sorted(files):
-                if file.lower().endswith(IMG_EXTS) or file.endswith('.txt') or file.endswith('.yaml'):
+                if file.lower().endswith(IMG_EXTS) or file.endswith(('.txt', '.yaml')):
                     full_path = os.path.join(root, file)
                     arc_name  = os.path.relpath(full_path, os.path.dirname(src))
                     zf.write(full_path, arc_name)
                     total_files += 1
 
     size_mb = os.path.getsize(zip_name) / 1024 / 1024
-    print(f"\n  ✅ Zip selesai!")
+    print("\n  ✅ Zip selesai!")
     print(f"     File: {zip_name}")
     print(f"     Total gambar: {total_files}")
     print(f"     Ukuran: {size_mb:.1f} MB")
-    print(f"\n  Upload file ini ke Google Drive, lalu di Colab:")
-    print(f"     from google.colab import drive")
-    print(f"     drive.mount('/content/drive')")
-    print(f"     !unzip '/content/drive/MyDrive/...' -d '/content/dataset'")
+    print("\n  Upload file ini ke Google Drive, lalu di Colab:")
+    print("     from google.colab import drive")
+    print("     drive.mount('/content/drive')")
+    print("     !unzip '/content/drive/MyDrive/...' -d '/content/dataset'")
 
 
 # ───────────────────────────────────────────────────────────────
@@ -282,7 +279,7 @@ def generate_info():
     info     = {
         "project":    "Pakcoy Growth Detection",
         "generated":  datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "classes":    list(sorted(counts.keys())),
+        "classes":    sorted(counts.keys()),
         "total":      sum(counts.values()),
         "per_class":  {k: v for k, v in sorted(counts.items())},
         "threshold_batang_cm": 7.0,

@@ -16,13 +16,15 @@ if os.path.exists(PENV_PYTHON) and os.path.normpath(sys.executable).lower() != o
     sys.exit(subprocess.call([PENV_PYTHON] + sys.argv))
 
 import warnings
+
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+from collections import Counter
 
 import cv2
 import numpy as np
 from PIL import Image
-from collections import Counter
 
 # Path dasar
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -46,9 +48,9 @@ CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 # ── AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD) ──
 # Bibit secara alami adalah tanaman sehat (normal).
 # Semakin RENDAH THRESH_NORMAL atau semakin TINGGI THRESH_ETIOLASI, bibit semakin diprioritaskan NORMAL.
-THRESH_NORMAL          = 0.35  # Jika probabilitas normal >= 35%, bibit langsung diprioritaskan NORMAL
-THRESH_ETIOLASI_RINGAN = 0.85  # Etiolasi ringan harus yakin minimal 70% baru diakui (mencegah salah tuduh)
-THRESH_ETIOLASI_BERAT  = 0.90  # Etiolasi berat harus yakin minimal 65% baru diakui
+THRESH_NORMAL          = 0.30  # Jika probabilitas normal >= 35%, bibit langsung diprioritaskan NORMAL
+THRESH_ETIOLASI_RINGAN = 0.75  # Etiolasi ringan harus yakin minimal 70% baru diakui (mencegah salah tuduh)
+THRESH_ETIOLASI_BERAT  = 0.80  # Etiolasi berat harus yakin minimal 65% baru diakui
 
 # ── WARNA & DISPLAY SESUAI DESAIN TRAY PAKCOY (Format BGR OpenCV) ──
 COLOR_KOTAK_ISI   = (255, 180, 0)   # KOTAK TRAY: CYAN / BIRU MUDA (sesuai referensi)
@@ -78,11 +80,13 @@ print("="*65, flush=True)
 
 print("\n⏳ [1/2] Loading YOLO26n-Seg (Model Deteksi)...", flush=True)
 from ultralytics import YOLO
+
 yolo_model = YOLO(YOLO_WEIGHTS)
 print("   ✅ YOLO berhasil dimuat! Kelas YOLO:", yolo_model.names, flush=True)
 
 print("\n⏳ [2/2] Loading Model Klasifikasi MobileNetV2...", flush=True)
 import tensorflow as tf
+
 mobilenet_models = {}
 for name, path in MOBILENET_MODELS.items():
     if os.path.exists(path):
@@ -126,7 +130,7 @@ def choose_file_dialog():
 
 def draw_detection_view(orig_img, tray_slots, model_name):
     vis = orig_img.copy()
-    h, w = vis.shape[:2]
+    _h, _w = vis.shape[:2]
 
     for idx, slot in enumerate(tray_slots):
         kx1, ky1, kx2, ky2 = slot["kotak_box"]
@@ -552,7 +556,7 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     # Untuk slot kosong
     for slot in tray_slots:
         if not slot["has_bibit"]:
-            for m_name in mobilenet_models.keys():
+            for m_name in mobilenet_models:
                 slot["preds"][m_name] = ("empty", 1.0)
 
     # 5. Tampilkan Rekapitulasi di Terminal
@@ -586,7 +590,7 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     print("="*95, flush=True)
 
     # 6. Sampel Detail 12 Slot Pertama
-    print(f"\n📋 Sampel Detail 12 Slot Tray Pertama:", flush=True)
+    print("\n📋 Sampel Detail 12 Slot Tray Pertama:", flush=True)
     sample_header = f"{'Slot':<6} | {'Status':<9}"
     for mk in m_keys[:3]:
         sample_header += f" | {mk[:15]:<15}"
@@ -601,7 +605,7 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
                 lbl, conf = s["preds"].get(mk, ("?", 0))
                 row += f" | {lbl[:3]} {conf:.0%}"
             else:
-                row += f" | empty         "
+                row += " | empty         "
         print(row, flush=True)
 
     if len(tray_slots) > 12:

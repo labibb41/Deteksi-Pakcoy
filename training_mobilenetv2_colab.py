@@ -3,19 +3,28 @@
 # Siap langsung dijalankan (Run All) di Google Colab!
 # =====================================================================
 
-import os, glob, zipfile, shutil
-import numpy as np
+import glob
+import os
+import shutil
+import zipfile
+
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 import tensorflow as tf
 from google.colab import drive, files
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.utils.class_weight import compute_class_weight
 from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout, BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.layers import (
+    BatchNormalization,
+    Dense,
+    Dropout,
+    GlobalAveragePooling2D,
+)
 from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-from sklearn.utils.class_weight import compute_class_weight
 
 # ── 1. HUBUNGKAN GOOGLE DRIVE ─────────────────────────
 if not os.path.exists('/content/drive/MyDrive'):
@@ -317,7 +326,7 @@ plt.show()
 
 # ── 11. SIMPAN MODEL & DOWNLOAD ────────────────────────
 model.save(MODEL_OUT)
-print(f"\n💾 Model berhasil disimpan di Google Drive:")
+print("\n💾 Model berhasil disimpan di Google Drive:")
 print(f"   👉 {MODEL_OUT}")
 files.download(MODEL_OUT)
 print("\n✅ SELESAI SEMUA! File grafik, confusion matrix, dan model sudah tersimpan.")

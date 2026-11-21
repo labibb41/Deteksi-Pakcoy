@@ -1,6 +1,6 @@
 import os
-import zipfile
 import shutil
+import zipfile
 
 app_dir = "aplikasi_deteksi_pakcoy"
 zip_filename = "aplikasi_deteksi_pakcoy.zip"

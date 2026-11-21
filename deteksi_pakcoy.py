@@ -7,18 +7,19 @@
 """
 
 import os
-import sys
 import warnings
+
 warnings.filterwarnings("ignore")
 
-import numpy as np
 import cv2
-from PIL import Image
 import matplotlib
+import numpy as np
+from PIL import Image
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import gradio as gr
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import tensorflow as tf
 from ultralytics import YOLO
 
@@ -98,7 +99,7 @@ def select_best_leaf_boxes(orig_bgr, bibit_boxes):
     
     scored_boxes = []
     for b in bibit_boxes:
-        x1, y1, x2, y2, yconf, ycls = b
+        x1, y1, x2, y2, _yconf, _ycls = b
         crop = orig_bgr[y1:y2, x1:x2]
         if crop.size == 0:
             continue
@@ -250,7 +251,7 @@ def run_pipeline(image_pil: Image.Image,
         "MobileNetV2 Augmented",
         "MobileNetV2 V3 (Terbaru)"
     ]
-    PRIMARY_MODEL = next((m for m in preferred_models if m in mobilenet_models), list(mobilenet_models.keys())[0] if mobilenet_models else "None")
+    PRIMARY_MODEL = next((m for m in preferred_models if m in mobilenet_models), next(iter(mobilenet_models.keys())) if mobilenet_models else "None")
     
     vis = img_rgb.copy()
     
@@ -265,7 +266,7 @@ def run_pipeline(image_pil: Image.Image,
         x1, y1, x2, y2 = item["bbox"]
         label, conf     = item["mob_preds"].get(
                               PRIMARY_MODEL,
-                              list(item["mob_preds"].values())[0]
+                              next(iter(item["mob_preds"].values()))
                           )
         display_label = CLASS_DISPLAY_NAMES.get(label, label)
         color_hex = CLASS_COLORS.get(label, "#2ecc71")
@@ -288,7 +289,7 @@ def run_pipeline(image_pil: Image.Image,
 
     # ── 4. BUILD RESULT TABLES (satu per MobileNetV2 version) ──
     model_summary_texts = {}
-    for model_name in mobilenet_models.keys():
+    for model_name in mobilenet_models:
         summary = build_summary_text(all_results, model_name, n_plants)
         model_summary_texts[model_name] = summary
 

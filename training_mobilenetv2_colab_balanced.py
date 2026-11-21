@@ -3,19 +3,32 @@
 # Pipeline: Ekstrak ZIP Baru -> Seimbangkan 1:1:1 (~1.050 Tiap Kelas) -> Training 2 Fase -> Evaluasi
 # =====================================================================
 
-import os, glob, zipfile, shutil
-import numpy as np
+import glob
+import os
+import shutil
+import zipfile
+
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 import tensorflow as tf
 from google.colab import drive, files
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout, BatchNormalization
-from tensorflow.keras.models import Model
-from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.layers import (
+    BatchNormalization,
+    Dense,
+    Dropout,
+    GlobalAveragePooling2D,
+)
+from tensorflow.keras.models import Model
+from tensorflow.keras.preprocessing.image import (
+    ImageDataGenerator,
+    img_to_array,
+    load_img,
+)
 
 # ── 1. HUBUNGKAN GOOGLE DRIVE & SETUP FOLDER ───────────
 if not os.path.exists('/content/drive/MyDrive'):

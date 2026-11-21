@@ -31,10 +31,10 @@
 ==============================================================
 """
 
-import cv2
-import numpy as np
 import os
 import sys
+
+import cv2
 
 # ── AUTO-RELAUNCH DENGAN C:\penv ──
 PENV_PYTHON = r"C:\penv\Scripts\python.exe"
@@ -86,7 +86,7 @@ in_calib_mode = False    # True saat sedang kalibrasi
 
 def mouse_cb(event, x, y, flags, param):
     global mx_state, mx_start, mx_curr, mx_draw
-    global cal_state, cal_pt1, cal_pt2, in_calib_mode
+    global cal_state, cal_pt1, cal_pt2
 
     # ── MODE KALIBRASI ──
     if in_calib_mode:
@@ -114,7 +114,7 @@ def mouse_cb(event, x, y, flags, param):
     elif event == cv2.EVENT_LBUTTONUP:
         mx_curr = (x, y)
         mx_draw = False
-        w = abs(mx_curr[0] - mx_start[0])
+        abs(mx_curr[0] - mx_start[0])
         h = abs(mx_curr[1] - mx_start[1])
         mx_state = "PENDING" if (h > MIN_PX) else "IDLE"
 
@@ -143,7 +143,7 @@ def classify_height(height_cm):
 #  DRAW OVERLAY
 # ───────────────────────────────────────────────────────────────
 def draw_overlay(disp, img_name, idx, total, stats, state, height_info):
-    h, w = disp.shape[:2]
+    _h, w = disp.shape[:2]
     bar_h = 110
 
     overlay = disp.copy()
@@ -210,7 +210,7 @@ def draw_ruler(disp, scale_cm_per_px):
     # Garis penggaris
     cv2.line(disp, (ruler_x, start_y), (ruler_x, int(start_y + max_cm * px_per_cm)), (200,200,200), 1)
 
-    for cm in range(0, min(max_cm+1, 25)):
+    for cm in range(min(max_cm+1, 25)):
         y = int(start_y + cm * px_per_cm)
         if y >= h - 5:
             break
@@ -309,7 +309,7 @@ def main():
 
     source_folder = sys.argv[1] if len(sys.argv) > 1 else ""
     if not source_folder:
-        print(f"\n📂 Folder foto kamera samping")
+        print("\n📂 Folder foto kamera samping")
         print(f"   (Enter = default: {DEFAULT_SOURCE}): ", end="")
         source_folder = input().strip() or DEFAULT_SOURCE
 
@@ -418,7 +418,7 @@ def main():
 
             # Pesan konfirmasi
             if saved_msg and saved_timer > 0:
-                dh, dw = disp.shape[:2]
+                dh, _dw = disp.shape[:2]
                 cv2.putText(disp, saved_msg, (10, dh - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 100), 2, cv2.LINE_AA)
                 saved_timer -= 1
@@ -437,7 +437,6 @@ def main():
             elif key == 27:
                 if in_calib_mode:
                     in_calib_mode = False
-                    cal_state     = "IDLE"
                     print("   Kalibrasi dibatalkan.")
                 elif mx_state in ("DRAWING", "PENDING"):
                     mx_state = "IDLE"

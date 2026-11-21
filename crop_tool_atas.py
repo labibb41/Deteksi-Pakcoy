@@ -38,12 +38,13 @@ if os.path.exists(PENV_PYTHON) and os.path.normpath(sys.executable).lower() != o
     import subprocess
     sys.exit(subprocess.call([PENV_PYTHON] + sys.argv))
 
-import cv2
-import numpy as np
 import glob
 import json
 import shutil
 from datetime import datetime
+
+import cv2
+import numpy as np
 
 # ───────────────────────────────────────────────────────────────
 #  KONFIGURASI
@@ -177,8 +178,6 @@ def canvas_to_img_coords(mx, my):
 
 
 def mouse_cb(event, mx, my, flags, param):
-    global state
-
     # 1. Roda Mouse -> Zoom In / Zoom Out
     if event == cv2.EVENT_MOUSEWHEEL:
         if flags > 0:
@@ -393,8 +392,6 @@ def count_existing(dataset_folder, stats):
 #  PROGRAM UTAMA
 # ───────────────────────────────────────────────────────────────
 def main():
-    global state
-
     source_folder = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SOURCE
     dataset_folder = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_DATASET
 
@@ -475,7 +472,7 @@ def main():
                 rect = cv2.getWindowImageRect(WIN_MAIN)
                 win_w = max(400, rect[2])
                 win_h = max(300, rect[3])
-            except:
+            except Exception:
                 win_w, win_h = disp_w, disp_h
 
             # Hitung viewport zoom
@@ -670,11 +667,11 @@ def main():
                         print(f"📦 Foto dipindahkan ke: {target_selesai}")
                         saved_msg = f"FOTO DIPINDAHKAN KE 'selesai': {img_name}"
                         saved_timer = 50
-                    except Exception as e:
+                    except Exception:
                         try:
                             os.remove(img_path)
                             print(f"🗑️  Foto dihapus: {img_path}")
-                        except:
+                        except Exception:
                             pass
                     
                     images.pop(img_idx)
@@ -692,10 +689,7 @@ def main():
             #  KONTROL NAVIGASI & ALAT UMUM
             # ───────────────────────────────────────────────────────────
             # KELUAR PROGRAM: Q atau ESC (saat tidak ada crop pending)
-            if key in (ord('q'), ord('Q')):
-                img_idx = len(images)
-                break
-            elif key == 27 and state["crop_state"] == "IDLE":
+            if key in (ord('q'), ord('Q')) or key == 27 and state["crop_state"] == "IDLE":
                 img_idx = len(images)
                 break
 
@@ -744,7 +738,7 @@ def main():
                         if os.path.exists(fpath):
                             try:
                                 os.remove(fpath)
-                            except:
+                            except Exception:
                                 pass
                         stats[cls] = max(0, stats.get(cls, 0) - 1)
                     labeled_history[img_key] = []
@@ -760,7 +754,7 @@ def main():
                     if os.path.exists(fpath):
                         try:
                             os.remove(fpath)
-                        except:
+                        except Exception:
                             pass
                     stats[cls] = max(0, stats.get(cls, 0) - 1)
                     saved_msg = f"↩️  UNDO: Crop {os.path.basename(fpath)} dihapus."
