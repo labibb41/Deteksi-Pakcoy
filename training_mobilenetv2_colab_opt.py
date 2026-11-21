@@ -29,7 +29,7 @@ os.makedirs(DRIVE_DIR, exist_ok=True)
 MODEL_OUT  = os.path.join(DRIVE_DIR, "mobilenetv2_pakcoy_opt.h5")
 BEST_CKPT  = "/content/best_model_opt.h5"
 IMG_SIZE   = (224, 224)
-BATCH_SIZE = 32
+BATCH_SIZE = 16   # Batch 16 memberi 69 update per epoch (2x lebih sering belajar dibanding batch 32)
 SEED       = 42
 KELAS      = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 N_KELAS    = len(KELAS)
@@ -92,17 +92,16 @@ print("\n" + "=" * 65)
 print("=== [2/6] PERSIAPAN DATA LATIH & VALIDASI (80% / 20%) ===")
 print("=" * 65)
 
-# PENTING: vertical_flip = False! Tanaman pakcoy tumbuh tegak ke atas (arah gravitasi).
-# Jangan dibalik terbalik (akar di atas) agar filter CNN tidak bingung membedakan tinggi batang.
+# Augmentasi realistis: rotasi halus, tanpa vertical flip
 train_datagen = ImageDataGenerator(
     rescale            = 1.0 / 255,   # Sinkron 100% dengan deteksi_cli.py
-    rotation_range     = 15,          # Rotasi wajar daun (maks 15 derajat, tidak boleh miring ekstrem)
-    width_shift_range  = 0.08,        # Geser horizontal sedikit
-    height_shift_range = 0.08,        # Geser vertikal sedikit
-    horizontal_flip    = True,        # Cermin horizontal (kiri-kanan wajar)
+    rotation_range     = 10,          # Rotasi wajar daun (maks 10 derajat)
+    width_shift_range  = 0.06,        # Geser horizontal sedikit
+    height_shift_range = 0.06,        # Geser vertikal sedikit
+    horizontal_flip    = True,        # Cermin horizontal
     vertical_flip      = False,       # WAJIB FALSE: Batang tidak boleh jungkir balik
-    zoom_range         = 0.10,        # Skala zoom wajar
-    brightness_range   = [0.85, 1.15],# Variasi pencahayaan lampu/matahari
+    zoom_range         = 0.08,        # Skala zoom halus
+    brightness_range   = [0.90, 1.10],# Variasi pencahayaan alami
     fill_mode          = "nearest",
     validation_split   = 0.20,        # 80% Latih, 20% Validasi
 )
@@ -137,21 +136,26 @@ val_gen = val_datagen.flow_from_directory(
 print(f"\n✓ Data Latih (Train)   : {train_gen.samples} gambar")
 print(f"✓ Data Validasi (Val)  : {val_gen.samples} gambar")
 
-# ── 4. CLASS WEIGHT BALANCED ALAMI (MEMULIHKAN KELAS ETIOLASI) ──
-# Bobot seimbang penuh: etiolasi_berat (~1.74) dan etiolasi_ringan (~1.24)
-# Bobot tinggi ini WAJIB agar model tidak malas dan tidak mengabaikan etiolasi berat!
-weights = compute_class_weight(
-    class_weight="balanced",
-    classes=np.unique(train_gen.classes),
-    y=train_gen.classes
-)
-class_weights_dict = dict(enumerate(weights))
+# ── 4. STRATEGI BOBOT NATURAL (MEMAKSIMALKAN AKURASI GLOBAL) ──
+# Di machine learning, 'balanced class weight' sengaja mengorbankan akurasi
+# kelas mayoritas (Normal) demi kelas minoritas, sehingga akurasi total turun.
+# Dengan bobot natural (None), model memaksimalkan akurasi murni dan
+# deteksi bibit Normal akan mencapai puncak akurasinya (>85-90%).
+USE_BALANCED_WEIGHT = False
 
-print("\n⚖️  Bobot Kelas Alami (Balanced Class Weights):")
-for idx, k in enumerate(KELAS):
-    print(f"   👉 {k:<18}: {class_weights_dict[idx]:.2f}")
+if USE_BALANCED_WEIGHT:
+    weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.unique(train_gen.classes),
+        y=train_gen.classes
+    )
+    class_weights_dict = dict(enumerate(weights))
+    print("\n⚖️  Bobot Kelas: BALANCED AKTIF")
+else:
+    class_weights_dict = None
+    print("\n⚖️  Bobot Kelas: NATURAL (None) - Memaksimalkan Akurasi Global & Kelas Normal!")
 
-# ── 5. ARSITEKTUR MOBILENETV2 ─────────────────────────
+# ── 5. ARSITEKTUR MOBILENETV2 (LEBIH RINGAN & CEGAH OVERFIT) ──
 base_model = MobileNetV2(
     input_shape = (224, 224, 3),
     include_top = False,
@@ -161,15 +165,14 @@ base_model.trainable = False
 
 x = GlobalAveragePooling2D()(base_model.output)
 x = BatchNormalization()(x)
-x = Dropout(0.35)(x)
-x = Dense(256, activation="relu")(x)
+x = Dropout(0.30)(x)
+x = Dense(128, activation="relu")(x)  # Dense 128 lebih tahan overfit untuk 1.100 gambar
 x = BatchNormalization()(x)
 x = Dropout(0.20)(x)
 output = Dense(N_KELAS, activation="softmax")(x)
 
 model = Model(inputs=base_model.input, outputs=output)
-# Label smoothing moderat 0.06 mencegah overconfidence mayoritas tanpa mengaburkan batas kelas
-loss_fn = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.06)
+loss_fn = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.04)
 
 # ── 6. PHASE 1: WARMUP HEAD KLASIFIKASI (15 Epoch) ────
 print("\n" + "=" * 65)
@@ -197,15 +200,13 @@ history1 = model.fit(
     verbose         = 1,
 )
 
-# ── 7. PHASE 2: FINE-TUNING BLOK 14-16 (LAYER 110 KE ATAS) (45 Epoch) ─
+# ── 7. PHASE 2: FINE-TUNING BLOK 14-16 (LAYER 115 KE ATAS) (45 Epoch) ─
 print("\n" + "=" * 65)
-print("=== [4/6] PHASE 2: FINE-TUNING LAYER 110 KE ATAS (45 Epoch) ===")
+print("=== [4/6] PHASE 2: FINE-TUNING LAYER 115 KE ATAS (45 Epoch) ===")
 print("=" * 65)
 
 base_model.trainable = True
-# Kunci feature extractor dasar (layer 0-109), buka hanya 2 blok teratas (110 ke atas)
-# Ini menjaga kestabilan bobot ImageNet pada dataset ~1000 gambar
-fine_tune_at = 110
+fine_tune_at = 115
 for layer in base_model.layers[:fine_tune_at]:
     layer.trainable = False
 
@@ -214,7 +215,7 @@ for layer in base_model.layers:
         layer.trainable = False
 
 model.compile(
-    optimizer = tf.keras.optimizers.Adam(learning_rate=5e-5),
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4),
     loss      = loss_fn,
     metrics   = ["accuracy"],
 )
@@ -222,7 +223,7 @@ model.compile(
 cb_phase2 = [
     EarlyStopping(monitor="val_accuracy", patience=12, restore_best_weights=True, verbose=1),
     ModelCheckpoint(BEST_CKPT, monitor="val_accuracy", save_best_only=True, verbose=0),
-    ReduceLROnPlateau(monitor="val_loss", factor=0.4, patience=3, min_lr=1e-7, verbose=1),
+    ReduceLROnPlateau(monitor="val_loss", factor=0.3, patience=2, min_lr=1e-7, verbose=1),
 ]
 
 history2 = model.fit(
