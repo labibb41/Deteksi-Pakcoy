@@ -143,8 +143,12 @@ def mouse_cb(event, mx, my, flags, param):
         state["center_x"] = 0.5
         state["center_y"] = 0.5
 
-    # 3. Klik Kanan -> Drag Pan (Menggeser Tampilan saat Zoom)
+    # 3. Klik Kanan -> Batal Crop / Drag Pan (Menggeser Tampilan saat Zoom)
     elif event == cv2.EVENT_RBUTTONDOWN:
+        if state["crop_state"] in ("PENDING", "DRAWING"):
+            state["crop_state"] = "IDLE"
+            state["is_drawing_crop"] = False
+            return
         state["is_panning"] = True
         state["pan_start_x"] = mx
         state["pan_start_y"] = my
@@ -163,10 +167,8 @@ def mouse_cb(event, mx, my, flags, param):
     elif event == cv2.EVENT_RBUTTONUP:
         state["is_panning"] = False
 
-    # 4. Klik Kiri -> Gambar Kotak Crop
+    # 4. Klik Kiri -> Gambar Kotak Crop (Klik 1x di luar untuk batalkan)
     elif event == cv2.EVENT_LBUTTONDOWN:
-        if state["crop_state"] == "PENDING":
-            return
         ix, iy = canvas_to_img_coords(mx, my)
         state["is_drawing_crop"] = True
         state["crop_start_img"] = (ix, iy)
@@ -188,6 +190,7 @@ def mouse_cb(event, mx, my, flags, param):
         if w >= MIN_PX and h >= MIN_PX:
             state["crop_state"] = "PENDING"
         else:
+            # Jika hanya klik 1x tanpa drag -> batalkan kotak yang aktif!
             state["crop_state"] = "IDLE"
 
 
@@ -245,12 +248,12 @@ def draw_header_bar(canvas, img_name, idx, total, stats, crop_state, n_crops_cur
 
     # Baris 3: Status / Panduan
     if crop_state == "PENDING":
-        txt(">>> TEKAN [1/N], [2/R], [3/B], atau [4/E] UNTUK SIMPAN CROP   (ESC = Batal) <<<", 
-            (14, 72), 0.45, (0, 255, 255), 2)
+        txt(">>> SIMPAN: [1/N], [2/R], [3/B], [4/E]   |   BATAL: [ESC], [C], [Klik Kanan], atau [Klik 1x di luar] <<<", 
+            (14, 72), 0.43, (0, 255, 255), 2)
     elif crop_state == "DRAWING":
         txt("Sedang menarik kotak crop bibit...", (14, 72), 0.42, (255, 255, 0))
     else:
-        txt("KONTROL: [Klik Kiri] Crop  |  [Scroll] Zoom  |  [Klik Kanan/Panah] Geser  |  [SPACE/D] Next  |  [X] Selesai", 
+        txt("KONTROL: [Klik Kiri] Tarik Crop  |  [Scroll] Zoom  |  [Klik Kanan/Panah] Geser  |  [SPACE/D] Next  |  [X] Selesai", 
             (14, 72), 0.38, (190, 190, 190))
 
 
@@ -488,12 +491,21 @@ def main():
                 continue
 
             # ── B. KONTROL UTAMA ──
-            if key in (27, ord('q'), ord('Q')):
+            # BATALKAN KOTAK CROP AKTIF: ESC, C, atau Backspace (8)
+            if key in (27, ord('c'), ord('C'), 8):
                 if state["crop_state"] in ("DRAWING", "PENDING"):
                     state["crop_state"] = "IDLE"
-                else:
-                    img_idx = len(images)  # Keluar
+                    saved_msg = "Crop dibatalkan (tidak disimpan)"
+                    saved_timer = 30
+                elif key == 27:
+                    # Jika tidak ada kotak aktif dan tekan ESC -> Keluar
+                    img_idx = len(images)
                     break
+
+            # KELUAR PROGRAM: Q
+            elif key in (ord('q'), ord('Q')):
+                img_idx = len(images)
+                break
 
             # NEXT FOTO: SPACE, D, atau Panah Kanan
             elif key in (ord(' '), ord('d'), ord('D'), 83, 2555904):
