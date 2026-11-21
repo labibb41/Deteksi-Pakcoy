@@ -189,7 +189,7 @@ def show_interactive_display(views_dict, orig_shape):
         ord('7'): model_keys[6] if len(model_keys) > 6 else None,
     }
 
-    current_model = "Murni (Terbaru)" if "Murni (Terbaru)" in views_dict else model_keys[0]
+    current_model = "Optimasi (Terbaru)" if "Optimasi (Terbaru)" in views_dict else ("Murni (Terbaru)" if "Murni (Terbaru)" in views_dict else model_keys[0])
 
     # State interaktif Zoom & Pan
     state = {
@@ -266,9 +266,10 @@ def show_interactive_display(views_dict, orig_shape):
     print("   👉 Double-Click / [R]     : Reset Zoom kembali ke tampilan penuh", flush=True)
     print("   👉 Tombol '+ / -'         : Zoom In / Zoom Out lewat keyboard", flush=True)
     print("   👉 Tombol Panah           : Geser tampilan", flush=True)
-    print("   👉 Tombol '1'             : ⭐ Model Murni Terbaru (mobilenetv2_pakcoy_murni.h5)", flush=True)
-    print("   👉 Tombol '2'             : Model Augmented", flush=True)
-    print("   👉 Tombol '3' s.d '7'     : Model V3, Top Pakcoy V3, Top Pakcoy, V2, V1", flush=True)
+    print("   👉 Tombol '1'             : ⭐ Model Optimasi Terbaru (mobilenetv2_pakcoy_opt.h5)", flush=True)
+    print("   👉 Tombol '2'             : Model Murni (mobilenetv2_pakcoy_murni.h5)", flush=True)
+    print("   👉 Tombol '3'             : Model Augmented", flush=True)
+    print("   👉 Tombol '4' s.d '8'     : Model V3, Top Pakcoy V3, Top Pakcoy, V2, V1", flush=True)
     print("   👉 Tombol 'ESC' atau 'Q'  : Tutup jendela\n", flush=True)
 
     while True:

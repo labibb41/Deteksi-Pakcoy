@@ -332,7 +332,7 @@ with gr.Blocks(title="🌿 Deteksi Pakcoy", css=css, theme=gr.themes.Soft()) as 
     gr.Markdown(
         """
         # 🌿 Sistem Deteksi & Klasifikasi Pertumbuhan Pakcoy
-        **Pipeline:** `YOLO26n-Seg` (deteksi objek) → `MobileNetV2 V1/V2/V3` (klasifikasi kondisi)
+        **Pipeline:** `YOLO26n-Seg` (deteksi objek) → `MobileNetV2 Optimasi / Murni / Augmented` (klasifikasi kondisi)
         
         **Kelas:** 🟢 Normal &nbsp;|&nbsp; 🟠 Etiolasi Ringan &nbsp;|&nbsp; 🔴 Etiolasi Berat &nbsp;|&nbsp; ⚪ Empty
         """,
@@ -350,13 +350,13 @@ with gr.Blocks(title="🌿 Deteksi Pakcoy", css=css, theme=gr.themes.Soft()) as 
             btn_run     = gr.Button("🚀 Jalankan Deteksi", variant="primary", size="lg")
 
         with gr.Column(scale=2):
-            out_image   = gr.Image(type="pil", label="🖼️ Hasil Deteksi (Label dari V3)")
+            out_image   = gr.Image(type="pil", label="🖼️ Hasil Deteksi (MobileNetV2 Optimasi)")
             out_status  = gr.Markdown("*Belum ada deteksi*")
 
     with gr.Row():
-        out_v1 = gr.Markdown(label="MobileNetV2 V1")
-        out_v2 = gr.Markdown(label="MobileNetV2 V2")
-        out_v3 = gr.Markdown(label="MobileNetV2 V3")
+        out_v1 = gr.Markdown(label="MobileNetV2 Optimasi")
+        out_v2 = gr.Markdown(label="MobileNetV2 Murni")
+        out_v3 = gr.Markdown(label="MobileNetV2 Augmented")
 
     out_crops = gr.Plot(label="🔍 Detail Crop Tiap Tanaman")
 
