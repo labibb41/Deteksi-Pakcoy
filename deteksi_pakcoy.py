@@ -12,6 +12,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import cv2
+from typing import Any
 import matplotlib
 import numpy as np
 from PIL import Image
@@ -20,7 +21,7 @@ matplotlib.use("Agg")
 import gradio as gr
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-import tensorflow as tf
+from tensorflow.keras.models import load_model
 from ultralytics import YOLO
 
 # ─────────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ print("⏳ Loading MobileNetV2 models...")
 mobilenet_models = {}
 for name, path in MOBILENET_MODELS.items():
     if os.path.exists(path):
-        mobilenet_models[name] = tf.keras.models.load_model(path)
+        mobilenet_models[name] = load_model(path, compile=False)
         print(f"  ✅ {name} loaded")
     else:
         print(f"  ⚠️  {name} NOT FOUND: {path}")
@@ -199,9 +200,9 @@ def run_pipeline(image_pil: Image.Image,
     h, w     = img_bgr.shape[:2]
 
     # ── 1. YOLO INFERENCE ──────────────────────────────────────
-    yolo_results = yolo_model(img_bgr, conf=yolo_conf, iou=yolo_iou, verbose=False)
-    result       = yolo_results[0]
-    boxes        = result.boxes
+    yolo_results: Any = yolo_model(img_bgr, conf=yolo_conf, iou=yolo_iou, verbose=False)
+    result: Any = yolo_results[0] if isinstance(yolo_results, (list, tuple)) else next(iter(yolo_results))
+    boxes: Any = getattr(result, "boxes", None)
 
     if boxes is None or len(boxes) == 0:
         return image_pil, "⚠️ Tidak ada objek terdeteksi oleh YOLO.", "", "", "", None

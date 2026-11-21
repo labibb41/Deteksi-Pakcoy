@@ -21,6 +21,7 @@ warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from collections import Counter
+from typing import Any
 
 import cv2
 import numpy as np
@@ -85,12 +86,12 @@ yolo_model = YOLO(YOLO_WEIGHTS)
 print("   ✅ YOLO berhasil dimuat! Kelas YOLO:", yolo_model.names, flush=True)
 
 print("\n⏳ [2/2] Loading Model Klasifikasi MobileNetV2...", flush=True)
-import tensorflow as tf
+from tensorflow.keras.models import load_model
 
 mobilenet_models = {}
 for name, path in MOBILENET_MODELS.items():
     if os.path.exists(path):
-        mobilenet_models[name] = tf.keras.models.load_model(path, compile=False)
+        mobilenet_models[name] = load_model(path, compile=False)
         print(f"   ✅ Model {name:<18} loaded ({os.path.basename(path)})", flush=True)
     else:
         print(f"   ⚠️  Model {name:<18} NOT FOUND: {path}", flush=True)
@@ -439,8 +440,9 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     print("🔍 Menjalankan deteksi objek dengan YOLO26n-Seg...", flush=True)
 
     # 1. YOLO Inference
-    results = yolo_model(orig_bgr, conf=conf_thresh, iou=iou_thresh, verbose=False)[0]
-    boxes = results.boxes
+    raw_res: Any = yolo_model(orig_bgr, conf=conf_thresh, iou=iou_thresh, verbose=False)
+    results: Any = raw_res[0] if isinstance(raw_res, (list, tuple)) else next(iter(raw_res))
+    boxes: Any = getattr(results, "boxes", None)
 
     if boxes is None or len(boxes) == 0:
         print("⚠️  Tidak ada objek yang terdeteksi oleh YOLO.", flush=True)

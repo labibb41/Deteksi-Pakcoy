@@ -42,6 +42,7 @@ import glob
 import json
 import shutil
 from datetime import datetime
+from typing import Any
 
 import cv2
 import numpy as np
@@ -80,7 +81,7 @@ HEADER_BUTTONS = [
 # ───────────────────────────────────────────────────────────────
 #  STATE GLOBAL
 # ───────────────────────────────────────────────────────────────
-state = {
+state: dict[str, Any] = {
     # Tampilan Canvas & Viewport
     "zoom": 1.0,
     "center_x": 0.5,
@@ -259,14 +260,16 @@ def mouse_cb(event, mx, my, flags, param):
             state["crop_state"] = "IDLE"
 
 
-def get_current_crop_rect():
+def get_current_crop_rect() -> tuple[int, int, int, int]:
     """Dapatkan koordinat bounding box crop dalam skala gambar asli."""
-    sx, sy = state["crop_start_img"]
-    cx, cy = state["crop_curr_img"]
-    x1 = min(sx, cx)
-    y1 = min(sy, cy)
-    x2 = max(sx, cx)
-    y2 = max(sy, cy)
+    sx: int = int(state["crop_start_img"][0])
+    sy: int = int(state["crop_start_img"][1])
+    cx: int = int(state["crop_curr_img"][0])
+    cy: int = int(state["crop_curr_img"][1])
+    x1: int = min(sx, cx)
+    y1: int = min(sy, cy)
+    x2: int = max(sx, cx)
+    y2: int = max(sy, cy)
     return x1, y1, x2, y2
 
 
@@ -521,10 +524,10 @@ def main():
             # 3. TAMPILKAN EFEK KILAT (FLASH) SAAT ANGKA 1, 2, 3 DITEKAN
             if state["flash_timer"] > 0 and state["flash_box"]:
                 fbx1, fby1, fbx2, fby2, fcol, flbl = state["flash_box"]
-                fcx1 = int(ox + (fbx1 - rx1) * scale)
-                fcy1 = int(oy + (fby1 - ry1) * scale)
-                fcx2 = int(ox + (fbx2 - rx1) * scale)
-                fcy2 = int(oy + (fby2 - ry1) * scale)
+                fcx1 = int(ox + (int(fbx1) - rx1) * scale)
+                fcy1 = int(oy + (int(fby1) - ry1) * scale)
+                fcx2 = int(ox + (int(fbx2) - rx1) * scale)
+                fcy2 = int(oy + (int(fby2) - ry1) * scale)
 
                 # Kotak kilat tebal + tulisan konfirmasi
                 cv2.rectangle(canvas, (fcx1, fcy1), (fcx2, fcy2), (255, 255, 255), 4)
@@ -541,10 +544,10 @@ def main():
             current_crops = labeled_history.get(img_key, [])
             for c_idx, crop_item in enumerate(current_crops, start=1):
                 _, c_cls, bx1, by1, bx2, by2 = crop_item
-                cx1 = int(ox + (bx1 - rx1) * scale)
-                cy1 = int(oy + (by1 - ry1) * scale)
-                cx2 = int(ox + (bx2 - rx1) * scale)
-                cy2 = int(oy + (by2 - ry1) * scale)
+                cx1 = int(ox + (int(bx1) - rx1) * scale)
+                cy1 = int(oy + (int(by1) - ry1) * scale)
+                cx2 = int(ox + (int(bx2) - rx1) * scale)
+                cy2 = int(oy + (int(by2) - ry1) * scale)
 
                 col = CLASS_COLOR.get(c_cls, (255, 255, 255))
                 # Border hitam 3px + border warna 2px agar sangat jelas dan rapi
@@ -574,7 +577,8 @@ def main():
                 cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), (0, 0, 0), 4)
                 cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), color, 2)
                 
-                pw, ph = abs(bx2 - bx1), abs(by2 - by1)
+                pw: int = abs(int(bx2) - int(bx1))
+                ph: int = abs(int(by2) - int(by1))
                 size_txt = f"{pw}x{ph}px [TEKAN 1/2/3 ATAU KLIK TOMBOL ATAS]" if state["crop_state"] == "PENDING" else f"{pw}x{ph}px"
                 cv2.rectangle(canvas, (cx1, max(oy, cy1 - 20)), (cx1 + len(size_txt)*7 + 8, cy1), (0, 0, 0), -1)
                 cv2.putText(canvas, size_txt, (cx1 + 4, max(oy + 14, cy1 - 5)),

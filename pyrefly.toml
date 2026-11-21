@@ -1,0 +1,7 @@
+disable-type-errors-in-ide = true
+
+[errors]
+unsupported-operation = "ignore"
+bad-index = "ignore"
+missing-attribute = "ignore"
+implicit-import = "ignore"
