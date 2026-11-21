@@ -1,6 +1,11 @@
 {
-    "python.defaultInterpreterPath": "C:\\penv\\Scripts\\python.exe",
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
     "python.analysis.extraPaths": [
+        "${workspaceFolder}\\.venv\\Lib\\site-packages",
+        "C:\\penv\\Lib\\site-packages"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}\\.venv\\Lib\\site-packages",
         "C:\\penv\\Lib\\site-packages"
     ]
 }

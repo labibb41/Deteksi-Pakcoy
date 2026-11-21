@@ -6,22 +6,26 @@
   Fitur Utama:
     - ANTI MELEBAR / GEPENG: Aspek rasio gambar terkunci 100% proporsional.
     - ZOOM & PAN INTERAKTIF:
-        * Scroll Roda Mouse      : Zoom In / Zoom Out ke posisi kursor
-        * Klik KANAN Tahan & Geser: Geser (Pan) tampilan saat di-zoom
-        * Double Click / [R]     : Reset Zoom kembali ke tampilan penuh
-        * Tombol Panah           : Geser tampilan
-    - CROP & LABEL:
-        * Klik KIRI Tahan & Geser : Tarik kotak crop pada bibit
-        * 1 / N                  : Simpan -> NORMAL (Kotak Hijau)
-        * 2 / R                  : Simpan -> ETIOLASI RINGAN (Kotak Oranye)
-        * 3 / B                  : Simpan -> ETIOLASI BERAT (Kotak Merah)
-        * 4 / E                  : Simpan -> EMPTY (Kotak Abu-abu)
-        * Z                      : Undo crop terakhir
+        * Scroll Roda Mouse       : Zoom In / Zoom Out ke posisi kursor
+        * Klik KANAN Tahan & Geser : Geser (Pan) tampilan saat di-zoom
+        * Double Click / [0]      : Reset Zoom kembali ke tampilan penuh
+        * Tombol Panah            : Geser tampilan
+    - CROP & LABEL (TOMBOL / KLIK LAYAR):
+        * Klik KIRI Tahan & Geser  : Tarik kotak crop pada bibit
+        * 1 / N / Numpad 1 / Klik  : Simpan -> NORMAL (Kotak Hijau)
+        * 2 / R / Numpad 2 / Klik  : Simpan -> ETIOLASI RINGAN (Kotak Oranye)
+        * 3 / B / Numpad 3 / Klik  : Simpan -> ETIOLASI BERAT (Kotak Merah)
+        * 4 / E / Numpad 4 / Klik  : Simpan -> EMPTY / KOSONG (Kotak Abu-abu)
+        * ESC / C / Klik Kanan    : Batalkan kotak crop aktif
+        * Z                        : Undo crop terakhir
+    - JEJAK KOTAK PERSISTEN:
+        * Setiap bibit yang sudah dicrop tetap meninggalkan kotak berwarna dan nomor (#1, #2, dst).
+        * Tersimpan ke file riwayat (crops_history.json) sehingga tidak hilang saat ganti foto atau buka ulang.
     - NAVIGASI & ARSIP:
-        * SPACE / D / ->         : Foto Berikutnya (Next)
-        * A / <-                 : Foto Sebelumnya (Back)
-        * X / DEL                : Hapus / Pindahkan foto ini ke 'selesai'
-        * Q                      : Keluar program
+        * SPACE / D / ->          : Foto Berikutnya (Next)
+        * A / <-                  : Foto Sebelumnya (Back)
+        * X / DEL                 : Hapus / Pindahkan foto ini ke 'selesai'
+        * Q                       : Keluar program
 ==============================================================
 """
 
@@ -37,6 +41,7 @@ if os.path.exists(PENV_PYTHON) and os.path.normpath(sys.executable).lower() != o
 import cv2
 import numpy as np
 import glob
+import json
 import shutil
 from datetime import datetime
 
@@ -48,22 +53,28 @@ DEFAULT_SOURCE  = os.path.join(BASE_DIR, "foto_kamera_atas")
 DEFAULT_DATASET = os.path.join(BASE_DIR, "dataset_baru_atas")
 SELESAI_DIR     = os.path.join(DEFAULT_SOURCE, "selesai")
 
-CLASS_KEYS = {
-    ord('1'): 'normal',         ord('n'): 'normal', ord('N'): 'normal',
-    ord('2'): 'etiolasi_ringan', ord('r'): 'etiolasi_ringan', ord('R'): 'etiolasi_ringan',
-    ord('3'): 'etiolasi_berat',  ord('b'): 'etiolasi_berat',  ord('B'): 'etiolasi_berat',
-    ord('4'): 'empty',           ord('e'): 'empty',           ord('E'): 'empty',
-}
-
 CLASS_COLOR = {           # BGR
-    'normal':           (50,  225, 50),   # Hijau
-    'etiolasi_ringan':  (0,   165, 255),  # Oranye
-    'etiolasi_berat':   (30,  30,  235),  # Merah
-    'empty':            (150, 150, 150),  # Abu-abu
+    'normal':           (50,  225, 50),   # Hijau Terang
+    'etiolasi_ringan':  (0,   165, 255),  # Oranye Terang
+    'etiolasi_berat':   (30,  30,  245),  # Merah Terang
+    'empty':            (170, 170, 170),  # Abu-abu
 }
 
 IMG_EXTS = ('*.jpg', '*.jpeg', '*.png', '*.bmp', '*.JPG', '*.JPEG', '*.PNG')
-MIN_PX   = 12             # Ukuran crop minimum (pixels)
+MIN_PX   = 10             # Ukuran crop minimum (pixels)
+BAR_H    = 92             # Tinggi header bar
+
+# ───────────────────────────────────────────────────────────────
+#  TOMBOL HEADER (KLIK DENGAN MOUSE)
+# ───────────────────────────────────────────────────────────────
+HEADER_BUTTONS = [
+    # (action_id, label, x, y, w, h, bg_color, border_color)
+    ('normal',          ' 1: NORMAL ',    14,  46, 125, 34, (20, 80, 20),   CLASS_COLOR['normal']),
+    ('etiolasi_ringan', ' 2: E.RINGAN ',  149, 46, 140, 34, (15, 70, 130), CLASS_COLOR['etiolasi_ringan']),
+    ('etiolasi_berat',  ' 3: E.BERAT ',   299, 46, 130, 34, (20, 20, 110), CLASS_COLOR['etiolasi_berat']),
+    ('empty',           ' 4: KOSONG ',    439, 46, 120, 34, (55, 55, 55),   CLASS_COLOR['empty']),
+    ('cancel',          ' X: BATAL ',     569, 46, 115, 34, (40, 20, 50),   (180, 180, 220)),
+]
 
 # ───────────────────────────────────────────────────────────────
 #  STATE GLOBAL
@@ -95,7 +106,50 @@ state = {
     "crop_start_img": (0, 0),
     "crop_curr_img": (0, 0),
     "is_drawing_crop": False,
+    # Tombol klik yang dipilih dari header
+    "header_action_clicked": None,
 }
+
+
+def get_class_from_key(key):
+    """
+    Menerjemahkan keycode keyboard ke nama kelas pakcoy.
+    Mendukung tombol angka atas, Numpad, dan tombol huruf.
+    """
+    # 1: NORMAL (Kotak Hijau)
+    if key in (
+        ord('1'), ord('n'), ord('N'),
+        177, 225, 0xFFB1, 65457, 65436
+    ):
+        return 'normal'
+
+    # 2: ETIOLASI RINGAN (Kotak Oranye)
+    if key in (
+        ord('2'), ord('r'), ord('R'),
+        178, 226, 0xFFB2, 65458, 65433
+    ):
+        return 'etiolasi_ringan'
+
+    # 3: ETIOLASI BERAT (Kotak Merah)
+    if key in (
+        ord('3'), ord('b'), ord('B'),
+        179, 227, 0xFFB3, 65459, 65435
+    ):
+        return 'etiolasi_berat'
+
+    # 4: EMPTY / KOSONG (Kotak Abu-abu)
+    if key in (
+        ord('4'), ord('e'), ord('E'),
+        180, 228, 0xFFB4, 65460, 65430
+    ):
+        return 'empty'
+
+    return None
+
+
+def is_cancel_key(key):
+    """Cek apakah tombol adalah pembatalan crop."""
+    return key in (27, 8, ord('c'), ord('C'), 65288)  # ESC, Backspace, C
 
 
 def canvas_to_img_coords(mx, my):
@@ -143,7 +197,7 @@ def mouse_cb(event, mx, my, flags, param):
         state["center_x"] = 0.5
         state["center_y"] = 0.5
 
-    # 3. Klik Kanan -> Batal Crop / Drag Pan (Menggeser Tampilan saat Zoom)
+    # 3. Klik Kanan -> Batalkan Crop / Drag Pan
     elif event == cv2.EVENT_RBUTTONDOWN:
         if state["crop_state"] in ("PENDING", "DRAWING"):
             state["crop_state"] = "IDLE"
@@ -167,8 +221,16 @@ def mouse_cb(event, mx, my, flags, param):
     elif event == cv2.EVENT_RBUTTONUP:
         state["is_panning"] = False
 
-    # 4. Klik Kiri -> Gambar Kotak Crop (Klik 1x di luar untuk batalkan)
+    # 4. Klik Kiri
     elif event == cv2.EVENT_LBUTTONDOWN:
+        # Cek apakah klik tombol di Header Bar
+        if my <= BAR_H and state["crop_state"] == "PENDING":
+            for btn_id, _, bx, by, bw, bh, _, _ in HEADER_BUTTONS:
+                if bx <= mx <= bx + bw and by <= my <= by + bh:
+                    state["header_action_clicked"] = btn_id
+                    return
+
+        # Klik di area gambar -> mulai tarik kotak crop baru
         ix, iy = canvas_to_img_coords(mx, my)
         state["is_drawing_crop"] = True
         state["crop_start_img"] = (ix, iy)
@@ -190,7 +252,7 @@ def mouse_cb(event, mx, my, flags, param):
         if w >= MIN_PX and h >= MIN_PX:
             state["crop_state"] = "PENDING"
         else:
-            # Jika hanya klik 1x tanpa drag -> batalkan kotak yang aktif!
+            # Jika hanya klik 1x tanpa drag -> batalkan
             state["crop_state"] = "IDLE"
 
 
@@ -210,57 +272,87 @@ def get_current_crop_rect():
 # ───────────────────────────────────────────────────────────────
 def draw_header_bar(canvas, img_name, idx, total, stats, crop_state, n_crops_current, confirm_delete):
     win_w = canvas.shape[1]
-    bar_h = 88
 
     overlay = canvas.copy()
-    bg_color = (25, 25, 75) if confirm_delete else (20, 20, 20)
-    cv2.rectangle(overlay, (0, 0), (win_w, bar_h), bg_color, -1)
-    cv2.addWeighted(overlay, 0.90, canvas, 0.10, 0, canvas)
+    bg_color = (25, 25, 75) if confirm_delete else (18, 18, 22)
+    cv2.rectangle(overlay, (0, 0), (win_w, BAR_H), bg_color, -1)
+    cv2.addWeighted(overlay, 0.92, canvas, 0.08, 0, canvas)
     border_col = (0, 70, 255) if confirm_delete else (0, 185, 255)
-    cv2.line(canvas, (0, bar_h), (win_w, bar_h), border_col, 2)
+    cv2.line(canvas, (0, BAR_H), (win_w, BAR_H), border_col, 2)
 
     def txt(text, pos, scale=0.42, color=(220, 220, 220), thick=1):
         cv2.putText(canvas, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
 
     if confirm_delete:
-        txt("[PERINGATAN] HAPUS / PINDAHKAN FILE INI?", (14, 26), 0.54, (0, 225, 255), 2)
+        txt("⚠️  KONFIRMASI: HAPUS / PINDAHKAN FILE INI?", (14, 26), 0.54, (0, 225, 255), 2)
         txt(f"File: {img_name}", (14, 52), 0.44, (255, 255, 255), 1)
         txt("Tekan [Y] = Pindahkan ke 'selesai'   |   [N] atau [ESC] = Batal", (14, 78), 0.46, (50, 255, 50), 2)
         return
 
-    # Baris 1: Info Gambar & Zoom
+    # Baris 1: Info Gambar & Zoom & Statistik
     zoom_txt = f"ZOOM: {state['zoom']:.1f}x"
-    txt(f"[{idx+1}/{total}]  {img_name}   |   {zoom_txt}", (14, 22), 0.48, (255, 255, 255), 1)
-    txt(f"Foto ini: {n_crops_current} bibit dicrop", (win_w - 240, 22), 0.44, (0, 240, 255), 1)
+    txt(f"[{idx+1}/{total}] {img_name}   |   {zoom_txt}", (14, 22), 0.46, (255, 255, 255), 1)
+    
+    # Ringkasan hasil crop foto ini
+    summary_txt = f"Foto Ini: {n_crops_current} bibit terlabeli | Total Baru: N:{stats['normal']} R:{stats['etiolasi_ringan']} B:{stats['etiolasi_berat']}"
+    txt(summary_txt, (win_w - 480, 22), 0.40, (0, 240, 255), 1)
 
-    # Baris 2: Tombol Kelas
-    txt("SIMPAN KELAS:", (14, 44), 0.40, (180, 180, 180))
-    colors_text = [
-        ("1/N: Normal",     CLASS_COLOR['normal']),
-        ("2/R: E.Ringan",   CLASS_COLOR['etiolasi_ringan']),
-        ("3/B: E.Berat",    CLASS_COLOR['etiolasi_berat']),
-        ("4/E: Empty",      CLASS_COLOR['empty']),
-    ]
-    x_pos = 125
-    for label, color in colors_text:
-        txt(label, (x_pos, 44), 0.42, color, 1)
-        x_pos += len(label) * 8 + 20
+    # Baris 2: Tombol Kelas Interaktif (Bisa Diklik & Ditekan Keyboard)
+    is_pending = (crop_state == "PENDING")
+    for btn_id, label, bx, by, bw, bh, b_bg, b_col in HEADER_BUTTONS:
+        # Highlight tombol saat kotak sedang PENDING
+        active_bg = b_bg if not is_pending else tuple(min(255, c + 35) for c in b_bg)
+        border_thick = 2 if is_pending else 1
+        cv2.rectangle(canvas, (bx, by), (bx + bw, by + bh), active_bg, -1)
+        cv2.rectangle(canvas, (bx, by), (bx + bw, by + bh), b_col, border_thick)
+        txt(label, (bx + 8, by + 22), 0.42, (255, 255, 255) if is_pending else (210, 210, 210), 1)
 
-    # Baris 3: Status / Panduan
-    if crop_state == "PENDING":
-        txt(">>> SIMPAN: [1/N], [2/R], [3/B], [4/E]   |   BATAL: [ESC], [C], [Klik Kanan], atau [Klik 1x di luar] <<<", 
-            (14, 72), 0.43, (0, 255, 255), 2)
-    elif crop_state == "DRAWING":
-        txt("Sedang menarik kotak crop bibit...", (14, 72), 0.42, (255, 255, 0))
+    # Indikator petunjuk di sebelah tombol
+    if is_pending:
+        txt("<<< PILIH KELAS DENGAN KLIK TOMBOL DI KIRI ATAU TEKAN ANGKA [1], [2], [3] PADA KEYBOARD", 
+            (700, 68), 0.38, (0, 255, 255), 1)
     else:
-        txt("KONTROL: [Klik Kiri] Tarik Crop  |  [Scroll] Zoom  |  [Klik Kanan/Panah] Geser  |  [SPACE/D] Next  |  [X] Selesai", 
-            (14, 72), 0.38, (190, 190, 190))
+        txt("[SPACE/D] Next  |  [A] Back  |  [Scroll] Zoom  |  [Klik Kanan] Geser  |  [Z] Undo  |  [X] Hapus/Selesai",
+            (700, 68), 0.36, (170, 170, 170), 1)
 
 
 # ───────────────────────────────────────────────────────────────
-#  SIMPAN HASIL CROP
+#  PENGELOLAAN RIWAYAT & PENYIMPANAN
 # ───────────────────────────────────────────────────────────────
-def save_crop_to_disk(orig_img, x1, y1, x2, y2, class_name, dataset_folder, stats, current_crops):
+def get_history_file(dataset_folder):
+    return os.path.join(dataset_folder, "crops_history.json")
+
+
+def load_persistent_history(dataset_folder):
+    """Muat riwayat bounding box yang tersimpan agar kotak tidak hilang saat dibuka ulang."""
+    hfile = get_history_file(dataset_folder)
+    if os.path.exists(hfile):
+        try:
+            with open(hfile, "r") as f:
+                data = json.load(f)
+                return data
+        except Exception as e:
+            print(f"⚠️  Gagal membaca riwayat history: {e}")
+    return {}
+
+
+def save_persistent_history(dataset_folder, history_dict):
+    """Simpan riwayat kotak ke JSON."""
+    hfile = get_history_file(dataset_folder)
+    try:
+        clean_dict = {}
+        for k, v in history_dict.items():
+            valid_list = [item for item in v if os.path.exists(item[0])]
+            if valid_list:
+                clean_dict[k] = valid_list
+        with open(hfile, "w") as f:
+            json.dump(clean_dict, f, indent=2)
+    except Exception as e:
+        print(f"⚠️  Gagal menyimpan crops_history.json: {e}")
+
+
+def save_crop_to_disk(orig_img, img_path, x1, y1, x2, y2, class_name, dataset_folder, stats, labeled_history):
+    """Potong gambar dan simpan ke folder kelas target."""
     crop = orig_img[y1:y2, x1:x2]
     if crop.size == 0 or crop.shape[0] < 5 or crop.shape[1] < 5:
         return None
@@ -273,9 +365,16 @@ def save_crop_to_disk(orig_img, x1, y1, x2, y2, class_name, dataset_folder, stat
     fpath = os.path.join(out_dir, fname)
 
     cv2.imwrite(fpath, crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
-    stats[class_name] += 1
-    item = (fpath, class_name, x1, y1, x2, y2)
-    current_crops.append(item)
+    stats[class_name] = stats.get(class_name, 0) + 1
+
+    item = (fpath, class_name, int(x1), int(y1), int(x2), int(y2))
+    
+    img_key = os.path.abspath(img_path)
+    if img_key not in labeled_history:
+        labeled_history[img_key] = []
+    labeled_history[img_key].append(item)
+
+    save_persistent_history(dataset_folder, labeled_history)
     return item
 
 
@@ -322,8 +421,8 @@ def main():
     stats = {'normal': 0, 'etiolasi_ringan': 0, 'etiolasi_berat': 0, 'empty': 0}
     count_existing(dataset_folder, stats)
 
-    # Riwayat crop per gambar
-    labeled_history = {}
+    # Muat riwayat crop persisten
+    labeled_history = load_persistent_history(dataset_folder)
 
     WIN_MAIN = "CROP TOOL PAKCOY - TOP VIEW"
     WIN_PREV = "Preview Crop"
@@ -343,6 +442,7 @@ def main():
 
     while 0 <= img_idx < len(images):
         img_path = images[img_idx]
+        img_key = os.path.abspath(img_path)
         orig = cv2.imread(img_path)
         if orig is None:
             print(f"⚠️  Gagal membuka: {img_path}")
@@ -350,8 +450,8 @@ def main():
             continue
 
         img_name = os.path.basename(img_path)
-        if img_path not in labeled_history:
-            labeled_history[img_path] = []
+        if img_key not in labeled_history:
+            labeled_history[img_key] = []
 
         orig_h, orig_w = orig.shape[:2]
         state["orig_w"] = orig_w
@@ -362,17 +462,20 @@ def main():
         state["center_x"] = 0.5
         state["center_y"] = 0.5
         state["crop_state"] = "IDLE"
-        confirm_delete = False
+        state["is_drawing_crop"] = False
+        state["header_action_clicked"] = None
 
         while True:
-            # Dapatkan ukuran jendela aktif secara dinamis
-            rect = cv2.getWindowImageRect(WIN_MAIN)
-            win_w = rect[2] if (rect is not None and rect[2] > 100) else disp_w
-            win_h = rect[3] if (rect is not None and rect[3] > 100) else disp_h
-            bar_h = 88
+            # 1. Update ukuran jendela saat ini
+            try:
+                rect = cv2.getWindowImageRect(WIN_MAIN)
+                win_w = max(400, rect[2])
+                win_h = max(300, rect[3])
+            except:
+                win_w, win_h = disp_w, disp_h
 
-            # 1. Hitung Region of Interest (ROI) sesuai Zoom & Pan
-            zoom = state["zoom"]
+            # Hitung viewport zoom
+            zoom = max(1.0, state["zoom"])
             crop_w = int(orig_w / zoom)
             crop_h = int(orig_h / zoom)
 
@@ -395,7 +498,7 @@ def main():
             # 2. Letterboxing Presisi: Kunci Aspek Rasio (TIDAK MELEBAR / GEPENG!)
             rw = rx2 - rx1
             rh = ry2 - ry1
-            avail_h = max(10, win_h - bar_h)
+            avail_h = max(10, win_h - BAR_H)
             scale = min(win_w / max(1, rw), avail_h / max(1, rh))
 
             nw = max(1, int(rw * scale))
@@ -404,7 +507,7 @@ def main():
 
             canvas = np.zeros((win_h, win_w, 3), dtype=np.uint8)
             ox = (win_w - nw) // 2
-            oy = bar_h + (avail_h - nh) // 2
+            oy = BAR_H + (avail_h - nh) // 2
             canvas[oy:oy+nh, ox:ox+nw] = resized_roi
 
             # Simpan koordinat canvas
@@ -414,8 +517,9 @@ def main():
             state["canvas_nw"] = nw
             state["canvas_nh"] = nh
 
-            # 3. Gambar kotak bibit yang SUDAH dicrop sebelumnya
-            for crop_item in labeled_history[img_path]:
+            # 3. Gambar kotak bibit yang SUDAH DICROP SEBELUMNYA (JEJAK KOTAK PERSISTEN)
+            current_crops = labeled_history.get(img_key, [])
+            for c_idx, crop_item in enumerate(current_crops, start=1):
                 _, c_cls, bx1, by1, bx2, by2 = crop_item
                 # Konversi koordinat asli gambar ke koordinat canvas
                 cx1 = int(ox + (bx1 - rx1) * scale)
@@ -423,12 +527,20 @@ def main():
                 cx2 = int(ox + (bx2 - rx1) * scale)
                 cy2 = int(oy + (by2 - ry1) * scale)
 
-                # Gambar hanya jika berada dalam area pandang canvas
                 col = CLASS_COLOR.get(c_cls, (255, 255, 255))
+                # Border hitam 4px + border warna 2px agar sangat jelas di background apapun
+                cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), (0, 0, 0), 4)
                 cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), col, 2)
-                lbl_txt = c_cls[:6].upper()
-                cv2.rectangle(canvas, (cx1, max(oy, cy1 - 14)), (cx1 + len(lbl_txt)*7 + 4, cy1), (15, 15, 15), -1)
-                cv2.putText(canvas, lbl_txt, (cx1 + 2, cy1 - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.32, col, 1, cv2.LINE_AA)
+
+                # Badge nomor dan nama kelas
+                lbl_badge = f"#{c_idx} {c_cls[:6].upper()}"
+                bw_badge = len(lbl_badge) * 8 + 8
+                bh_badge = 18
+                top_badge = max(oy, cy1 - bh_badge)
+                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + bh_badge), (0, 0, 0), -1)
+                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + bh_badge), col, 1)
+                cv2.putText(canvas, lbl_badge, (cx1 + 4, top_badge + 13),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1, cv2.LINE_AA)
 
             # 4. Gambar kotak crop yang SEDANG ditarik / PENDING
             if state["crop_state"] in ("DRAWING", "PENDING"):
@@ -439,9 +551,14 @@ def main():
                 cy2 = int(oy + (by2 - ry1) * scale)
 
                 color = (0, 255, 255) if state["crop_state"] == "PENDING" else (255, 255, 0)
+                # Outer shadow hitam + inner border warna
+                cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), (0, 0, 0), 4)
                 cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), color, 2)
+                
                 pw, ph = abs(bx2 - bx1), abs(by2 - by1)
-                cv2.putText(canvas, f"{pw}x{ph}px", (cx1 + 2, max(oy + 12, cy1 - 5)),
+                size_txt = f"{pw}x{ph}px [TEKAN 1/2/3 ATAU KLIK TOMBOL ATAS]" if state["crop_state"] == "PENDING" else f"{pw}x{ph}px"
+                cv2.rectangle(canvas, (cx1, max(oy, cy1 - 20)), (cx1 + len(size_txt)*7 + 8, cy1), (0, 0, 0), -1)
+                cv2.putText(canvas, size_txt, (cx1 + 4, max(oy + 14, cy1 - 5)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1, cv2.LINE_AA)
 
                 # Update preview crop di jendela kecil
@@ -453,18 +570,70 @@ def main():
 
             # 5. Pesan notifikasi sementara di bawah
             if saved_msg and saved_timer > 0:
-                cv2.putText(canvas, saved_msg, (16, win_h - 15),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 120), 2, cv2.LINE_AA)
+                cv2.rectangle(canvas, (10, win_h - 35), (win_w - 10, win_h - 5), (10, 40, 10), -1)
+                cv2.rectangle(canvas, (10, win_h - 35), (win_w - 10, win_h - 5), (0, 255, 120), 1)
+                cv2.putText(canvas, saved_msg, (20, win_h - 14),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 150), 1, cv2.LINE_AA)
                 saved_timer -= 1
 
             # 6. Header Bar di Bagian Atas
-            n_crops = len(labeled_history[img_path])
+            n_crops = len(current_crops)
             draw_header_bar(canvas, img_name, img_idx, len(images), stats, state["crop_state"], n_crops, confirm_delete)
 
             cv2.imshow(WIN_MAIN, canvas)
             key = cv2.waitKey(25) & 0xFF
 
-            # ── A. MODE KONFIRMASI HAPUS FOTO ──
+            # ───────────────────────────────────────────────────────────
+            #  LOGIKA EVENT: PRIORITAS TINGGI SAAT CROP SEDANG PENDING
+            # ───────────────────────────────────────────────────────────
+            # 1. Cek apakah ada aksi klik dari tombol Header
+            clicked_action = state["header_action_clicked"]
+            state["header_action_clicked"] = None
+
+            if state["crop_state"] == "PENDING":
+                # A. Simpan jika tombol Header diklik
+                if clicked_action in CLASS_COLOR:
+                    bx1, by1, bx2, by2 = get_current_crop_rect()
+                    item = save_crop_to_disk(orig, img_path, bx1, by1, bx2, by2,
+                                            clicked_action, dataset_folder, stats, labeled_history)
+                    if item:
+                        tot = len(labeled_history[img_key])
+                        saved_msg = f"✅ TERSIMPAN: [{clicked_action.upper()}] #{tot} (Total foto ini: {tot} bibit)"
+                        saved_timer = 50
+                        print(f"✅ [{clicked_action.upper()}] #{tot} Tersimpan: {os.path.basename(item[0])}")
+                    state["crop_state"] = "IDLE"
+                    continue
+
+                elif clicked_action == "cancel":
+                    state["crop_state"] = "IDLE"
+                    saved_msg = "Crop dibatalkan."
+                    saved_timer = 30
+                    continue
+
+                # B. Simpan jika tombol Keyboard ditekan (1, 2, 3, 4, N, R, B, E, Numpad)
+                class_choice = get_class_from_key(key)
+                if class_choice:
+                    bx1, by1, bx2, by2 = get_current_crop_rect()
+                    item = save_crop_to_disk(orig, img_path, bx1, by1, bx2, by2,
+                                            class_choice, dataset_folder, stats, labeled_history)
+                    if item:
+                        tot = len(labeled_history[img_key])
+                        saved_msg = f"✅ TERSIMPAN: [{class_choice.upper()}] #{tot} (Total foto ini: {tot} bibit)"
+                        saved_timer = 50
+                        print(f"✅ [{class_choice.upper()}] #{tot} Tersimpan: {os.path.basename(item[0])}")
+                    state["crop_state"] = "IDLE"
+                    continue
+
+                # C. Batalkan jika tekan ESC, C, Backspace
+                if is_cancel_key(key):
+                    state["crop_state"] = "IDLE"
+                    saved_msg = "Crop dibatalkan (tidak disimpan)"
+                    saved_timer = 30
+                    continue
+
+            # ───────────────────────────────────────────────────────────
+            #  MODE KONFIRMASI HAPUS / PINDAHKAN FOTO
+            # ───────────────────────────────────────────────────────────
             if confirm_delete:
                 if key in (ord('y'), ord('Y')):
                     target_selesai = os.path.join(SELESAI_DIR, img_name)
@@ -483,6 +652,7 @@ def main():
                     images.pop(img_idx)
                     if img_idx >= len(images):
                         img_idx = max(0, len(images) - 1)
+                    confirm_delete = False
                     break
                 elif key in (ord('n'), ord('N'), 27):
                     confirm_delete = False
@@ -490,20 +660,14 @@ def main():
                     saved_timer = 30
                 continue
 
-            # ── B. KONTROL UTAMA ──
-            # BATALKAN KOTAK CROP AKTIF: ESC, C, atau Backspace (8)
-            if key in (27, ord('c'), ord('C'), 8):
-                if state["crop_state"] in ("DRAWING", "PENDING"):
-                    state["crop_state"] = "IDLE"
-                    saved_msg = "Crop dibatalkan (tidak disimpan)"
-                    saved_timer = 30
-                elif key == 27:
-                    # Jika tidak ada kotak aktif dan tekan ESC -> Keluar
-                    img_idx = len(images)
-                    break
-
-            # KELUAR PROGRAM: Q
-            elif key in (ord('q'), ord('Q')):
+            # ───────────────────────────────────────────────────────────
+            #  KONTROL NAVIGASI & ALAT UMUM
+            # ───────────────────────────────────────────────────────────
+            # KELUAR PROGRAM: Q atau ESC (saat tidak ada crop pending)
+            if key in (ord('q'), ord('Q')):
+                img_idx = len(images)
+                break
+            elif key == 27 and state["crop_state"] == "IDLE":
                 img_idx = len(images)
                 break
 
@@ -525,8 +689,8 @@ def main():
             elif key in (ord('x'), ord('X'), 127, 255, 3014656):
                 confirm_delete = True
 
-            # RESET ZOOM: R atau 0
-            elif key in (ord('r'), ord('R'), ord('0')):
+            # RESET ZOOM: 0 (Nol)
+            elif key in (ord('0'), ord('r'), ord('R')) and state["crop_state"] == "IDLE":
                 state["zoom"] = 1.0
                 state["center_x"] = 0.5
                 state["center_y"] = 0.5
@@ -534,40 +698,33 @@ def main():
                 saved_timer = 30
 
             # GESER PAN DENGAN TOMBOL PANAH
-            elif key == 82 or key == 2490368: # Panah Atas
+            elif key in (82, 2490368): # Panah Atas
                 state["center_y"] = max(0.0, state["center_y"] - 0.05 / state["zoom"])
-            elif key == 84 or key == 2621440: # Panah Bawah
+            elif key in (84, 2621440): # Panah Bawah
                 state["center_y"] = min(1.0, state["center_y"] + 0.05 / state["zoom"])
-            elif key == 81 or key == 2424832: # Panah Kiri
+            elif key in (81, 2424832): # Panah Kiri
                 state["center_x"] = max(0.0, state["center_x"] - 0.05 / state["zoom"])
-            elif key == 83 or key == 2555904: # Panah Kanan
+            elif key in (83, 2555904): # Panah Kanan
                 state["center_x"] = min(1.0, state["center_x"] + 0.05 / state["zoom"])
 
             # UNDO CROP TERAKHIR: Z
             elif key in (ord('z'), ord('Z')):
-                if labeled_history[img_path]:
-                    fpath, cls, _, _, _, _ = labeled_history[img_path].pop()
+                crops_list = labeled_history.get(img_key, [])
+                if crops_list:
+                    fpath, cls, _, _, _, _ = crops_list.pop()
                     if os.path.exists(fpath):
-                        os.remove(fpath)
-                    stats[cls] = max(0, stats[cls] - 1)
-                    saved_msg = f"UNDO: {os.path.basename(fpath)}"
+                        try:
+                            os.remove(fpath)
+                        except:
+                            pass
+                    stats[cls] = max(0, stats.get(cls, 0) - 1)
+                    save_persistent_history(dataset_folder, labeled_history)
+                    saved_msg = f"↩️  UNDO: Crop {os.path.basename(fpath)} dihapus."
                     saved_timer = 40
+                    print(f"↩️  [UNDO] {os.path.basename(fpath)} dihapus.")
                 else:
                     saved_msg = "Tidak ada crop pada foto ini yang bisa di-undo."
                     saved_timer = 30
-                state["crop_state"] = "IDLE"
-
-            # SIMPAN CROP SAAT PENDING (1, 2, 3, 4 atau N, R, B, E)
-            elif state["crop_state"] == "PENDING" and key in CLASS_KEYS:
-                class_name = CLASS_KEYS[key]
-                bx1, by1, bx2, by2 = get_current_crop_rect()
-                item = save_crop_to_disk(orig, bx1, by1, bx2, by2,
-                                        class_name, dataset_folder, stats, labeled_history[img_path])
-                if item:
-                    fpath = item[0]
-                    saved_msg = f"TERSIMPAN: [{class_name.upper()}] {os.path.basename(fpath)}"
-                    saved_timer = 50
-                    print(f"✅ [{class_name}] {os.path.basename(fpath)}")
                 state["crop_state"] = "IDLE"
 
     cv2.destroyAllWindows()
@@ -578,8 +735,6 @@ def main():
         print(f"   👉 {cls:<18}: {cnt:4d} gambar")
     print(f"   👉 {'TOTAL':<18}: {sum(stats.values()):4d} gambar")
     print(f"\n📁 Lokasi Dataset : {dataset_folder}")
-    print("="*55)
-    print("🎉 Selesai! Jalankan 'update_dataset.py' jika ingin menggabungkannya ke dataset utama.")
 
 
 if __name__ == "__main__":
