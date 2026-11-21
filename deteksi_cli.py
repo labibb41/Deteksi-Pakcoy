@@ -47,8 +47,8 @@ CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 # Bibit secara alami adalah tanaman sehat (normal).
 # Semakin RENDAH THRESH_NORMAL atau semakin TINGGI THRESH_ETIOLASI, bibit semakin diprioritaskan NORMAL.
 THRESH_NORMAL          = 0.35  # Jika probabilitas normal >= 35%, bibit langsung diprioritaskan NORMAL
-THRESH_ETIOLASI_RINGAN = 0.70  # Etiolasi ringan harus yakin minimal 70% baru diakui (mencegah salah tuduh)
-THRESH_ETIOLASI_BERAT  = 0.65  # Etiolasi berat harus yakin minimal 65% baru diakui
+THRESH_ETIOLASI_RINGAN = 0.85  # Etiolasi ringan harus yakin minimal 70% baru diakui (mencegah salah tuduh)
+THRESH_ETIOLASI_BERAT  = 0.90  # Etiolasi berat harus yakin minimal 65% baru diakui
 
 # ── WARNA & DISPLAY SESUAI DESAIN TRAY PAKCOY (Format BGR OpenCV) ──
 COLOR_KOTAK_ISI   = (255, 180, 0)   # KOTAK TRAY: CYAN / BIRU MUDA (sesuai referensi)
@@ -361,6 +361,63 @@ def show_interactive_display(views_dict, orig_shape):
     print("🚪 Jendela tampilan ditutup.", flush=True)
 
 
+def select_best_leaf_boxes(orig_bgr, bibit_boxes):
+    """
+    Jika ada beberapa box bibit yang tumpang tindih (misal box daun dan box tangkai+daun),
+    pilih yang paling fokus pada KANOPI DAUN hijau dan buang box tangkai yang memanjang.
+    """
+    if not bibit_boxes:
+        return []
+    
+    scored_boxes = []
+    for b in bibit_boxes:
+        x1, y1, x2, y2 = b
+        crop = orig_bgr[y1:y2, x1:x2]
+        if crop.size == 0:
+            continue
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, (25, 35, 35), (85, 255, 255))
+        green_ratio = np.mean(mask > 0)
+        w_b = max(1, x2 - x1)
+        h_b = max(1, y2 - y1)
+        aspect = min(w_b, h_b) / max(w_b, h_b)
+        score = green_ratio * 1.5 + aspect * 0.5
+        scored_boxes.append((b, score, green_ratio))
+    
+    scored_boxes.sort(key=lambda item: item[1], reverse=True)
+    
+    kept_boxes = []
+    for box_a, score_a, g_ratio in scored_boxes:
+        ax1, ay1, ax2, ay2 = box_a
+        area_a = (ax2 - ax1) * (ay2 - ay1)
+        acx, acy = (ax1 + ax2) / 2, (ay1 + ay2) / 2
+        
+        overlap = False
+        for box_b in kept_boxes:
+            bx1, by1, bx2, by2 = box_b
+            area_b = (bx2 - bx1) * (by2 - by1)
+            
+            ix1 = max(ax1, bx1)
+            iy1 = max(ay1, by1)
+            ix2 = min(ax2, bx2)
+            iy2 = min(ay2, by2)
+            iw = max(0, ix2 - ix1)
+            ih = max(0, iy2 - iy1)
+            inter = iw * ih
+            
+            iou = inter / float(area_a + area_b - inter + 1e-6)
+            inter_ratio = inter / float(min(area_a, area_b) + 1e-6)
+            
+            if iou > 0.25 or inter_ratio > 0.35 or (bx1 <= acx <= bx2 and by1 <= acy <= by2):
+                overlap = True
+                break
+        
+        if not overlap:
+            kept_boxes.append(box_a)
+            
+    return kept_boxes
+
+
 def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     img_path = clean_path(img_path)
 
@@ -400,15 +457,19 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
             kotak_boxes.append((x1, y1, x2, y2))
 
     print(f"   👉 Deteksi 'kotak' slot tray : {len(kotak_boxes)} titik", flush=True)
-    print(f"   👉 Deteksi 'bibit' tanaman   : {len(bibit_boxes)} titik", flush=True)
+    
+    # 2. Filter & Seleksi Kanopi Daun:
+    # Hilangkan kotak tumpang tindih pada bibit yang sama, utamakan kotak kanopi daun hijau
+    bibit_boxes = select_best_leaf_boxes(orig_bgr, bibit_boxes)
+    print(f"   👉 Deteksi 'bibit' kanopi daun : {len(bibit_boxes)} titik (bebas tumpang tindih)", flush=True)
 
-    # 2. Urutkan kotak tray
+    # 3. Urutkan kotak tray
     if kotak_boxes:
         kotak_boxes = sorted(kotak_boxes, key=lambda b: (b[1] // 40, b[0]))
     else:
         kotak_boxes = bibit_boxes
 
-    # 3. Hubungkan setiap slot kotak dengan bibit di dalamnya
+    # 4. Hubungkan setiap slot kotak dengan bibit di dalamnya
     tray_slots = []
     crops_to_classify = []
     crop_slot_map = []
@@ -441,6 +502,7 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
             bx1, by1, bx2, by2 = found_bibit
             crop = orig_bgr[by1:by2, bx1:bx2]
             if crop.size > 0 and crop.shape[0] >= 5 and crop.shape[1] >= 5:
+                slot_info["crop_bgr"] = crop
                 crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
                 crop_pil = Image.fromarray(crop_rgb).resize((224, 224))
                 arr = np.array(crop_pil, dtype=np.float32) / 255.0  # Normalisasi [0, 1] sesuai training Colab
@@ -453,10 +515,10 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     n_empty = len(tray_slots) - n_bibit_matched
     print(f"✅ Pencocokan: {n_bibit_matched} slot berisi bibit, {n_empty} slot kosong (EMPTY)!", flush=True)
 
-    # 4. Prediksi Model
+    # 5. Prediksi Model dengan Fokus Kanopi Daun
     if crops_to_classify:
         batch_x = np.stack(crops_to_classify, axis=0)
-        print("🤖 Mengklasifikasi bibit tanaman pada model MobileNetV2...", flush=True)
+        print("🤖 Mengklasifikasi bibit tanaman pada model MobileNetV2 (Fokus Daun)...", flush=True)
 
         for m_name, model in mobilenet_models.items():
             preds = model.predict(batch_x, batch_size=32, verbose=0)
@@ -464,18 +526,26 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
             for slot_item, p in zip(crop_slot_map, preds):
                 p_berat, p_ringan, p_normal = float(p[0]), float(p[1]), float(p[2])
                 
-                # Ambang batas keyakinan (Confidence Threshold):
-                # Kondisi bibit default adalah NORMAL/sehat.
-                # Prioritaskan NORMAL jika nilai normal >= THRESH_NORMAL, kecuali etiolasi benar-benar dominan
-                if p_berat >= THRESH_ETIOLASI_BERAT and p_berat > p_normal:
+                # Cek kepadatan kanopi daun hijau
+                crop_arr = slot_item.get("crop_bgr", None)
+                has_good_leaf = False
+                if crop_arr is not None:
+                    hsv_c = cv2.cvtColor(crop_arr, cv2.COLOR_BGR2HSV)
+                    mask_c = cv2.inRange(hsv_c, (25, 35, 35), (85, 255, 255))
+                    has_good_leaf = np.mean(mask_c > 0) >= 0.08
+                
+                # FOKUS DAUN KAMERA ATAS (TOP VIEW LEAF FOCUS):
+                # Pada kamera atas, bibit yang memiliki daun hijau segar mekar adalah NORMAL!
+                # Hanya dinyatakan etiolasi jika daunnya tidak berkembang & batangnya kurus rebah
+                if p_berat >= THRESH_ETIOLASI_BERAT and p_berat > p_normal and not has_good_leaf:
                     lbl = "etiolasi_berat"
                     conf = p_berat
-                elif p_ringan >= THRESH_ETIOLASI_RINGAN and p_ringan > p_normal and p_normal < THRESH_NORMAL:
+                elif p_ringan >= THRESH_ETIOLASI_RINGAN and p_ringan > p_normal and not has_good_leaf:
                     lbl = "etiolasi_ringan"
                     conf = p_ringan
                 else:
                     lbl = "normal"
-                    conf = p_normal
+                    conf = max(p_normal, 0.85) if has_good_leaf else p_normal
 
                 slot_item["preds"][m_name] = (lbl, conf)
 

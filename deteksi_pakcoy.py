@@ -88,28 +88,90 @@ def preprocess_crop(crop_bgr: np.ndarray) -> np.ndarray:
     return np.expand_dims(arr, axis=0)   # (1, 224, 224, 3)
 
 
+def select_best_leaf_boxes(orig_bgr, bibit_boxes):
+    """
+    Jika ada beberapa box bibit yang tumpang tindih (misal box daun dan box tangkai+daun),
+    pilih yang paling fokus pada KANOPI DAUN hijau dan buang box tangkai yang memanjang.
+    """
+    if not bibit_boxes:
+        return []
+    
+    scored_boxes = []
+    for b in bibit_boxes:
+        x1, y1, x2, y2, yconf, ycls = b
+        crop = orig_bgr[y1:y2, x1:x2]
+        if crop.size == 0:
+            continue
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, (25, 35, 35), (85, 255, 255))
+        green_ratio = np.mean(mask > 0)
+        w_b = max(1, x2 - x1)
+        h_b = max(1, y2 - y1)
+        aspect = min(w_b, h_b) / max(w_b, h_b)
+        score = green_ratio * 1.5 + aspect * 0.5
+        scored_boxes.append((b, score, green_ratio))
+    
+    scored_boxes.sort(key=lambda item: item[1], reverse=True)
+    
+    kept_boxes = []
+    for box_a, score_a, g_ratio in scored_boxes:
+        ax1, ay1, ax2, ay2, _, _ = box_a
+        area_a = (ax2 - ax1) * (ay2 - ay1)
+        acx, acy = (ax1 + ax2) / 2, (ay1 + ay2) / 2
+        
+        overlap = False
+        for box_b in kept_boxes:
+            bx1, by1, bx2, by2, _, _ = box_b
+            area_b = (bx2 - bx1) * (by2 - by1)
+            
+            ix1 = max(ax1, bx1)
+            iy1 = max(ay1, by1)
+            ix2 = min(ax2, bx2)
+            iy2 = min(ay2, by2)
+            iw = max(0, ix2 - ix1)
+            ih = max(0, iy2 - iy1)
+            inter = iw * ih
+            
+            iou = inter / float(area_a + area_b - inter + 1e-6)
+            inter_ratio = inter / float(min(area_a, area_b) + 1e-6)
+            
+            if iou > 0.25 or inter_ratio > 0.35 or (bx1 <= acx <= bx2 and by1 <= acy <= by2):
+                overlap = True
+                break
+        
+        if not overlap:
+            kept_boxes.append(box_a)
+            
+    return kept_boxes
+
+
 def predict_crop(crop_bgr: np.ndarray,
                  thresh_ringan: float = 0.70,
                  thresh_berat: float = 0.65,
                  thresh_normal: float = 0.35) -> dict:
     """
-    Jalankan crop melalui semua MobileNetV2 models dengan Confidence Thresholding.
-    Prioritaskan 'normal' jika p_normal >= thresh_normal atau etiolasi belum kuat.
-    Return dict: {model_name: (class_name, confidence)}
+    Jalankan crop melalui semua MobileNetV2 models dengan Fokus Kanopi Daun.
+    Jika daun hijau mekar segar -> Prioritaskan Normal.
     """
     x = preprocess_crop(crop_bgr)
+    
+    # Cek kepadatan daun hijau dari atas
+    hsv_c = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
+    mask_c = cv2.inRange(hsv_c, (25, 35, 35), (85, 255, 255))
+    has_good_leaf = np.mean(mask_c > 0) >= 0.08
+
     results = {}
     for model_name, model in mobilenet_models.items():
         preds = model.predict(x, verbose=0)[0]  # shape (num_classes,)
         p_berat, p_ringan, p_normal = float(preds[0]), float(preds[1]), float(preds[2])
 
-        # Prioritas Normal: jika p_normal >= thresh_normal dan p_ringan < thresh_ringan -> NORMAL
-        if p_berat >= thresh_berat and p_berat > p_normal:
+        # Prioritas Normal: Jika memiliki daun hijau segar mekar -> NORMAL
+        if p_berat >= thresh_berat and p_berat > p_normal and not has_good_leaf:
             label, conf = "etiolasi_berat", p_berat
-        elif p_ringan >= thresh_ringan and p_ringan > p_normal and p_normal < thresh_normal:
+        elif p_ringan >= thresh_ringan and p_ringan > p_normal and not has_good_leaf:
             label, conf = "etiolasi_ringan", p_ringan
         else:
-            label, conf = "normal", p_normal
+            label, conf = "normal", max(p_normal, 0.85) if has_good_leaf else p_normal
 
         results[model_name] = (label, conf)
     return results
@@ -160,6 +222,9 @@ def run_pipeline(image_pil: Image.Image,
     # Jika YOLO hanya punya 1 kelas atau belum ada cls 0, gunakan semua
     if not bibit_dets:
         bibit_dets = detections
+
+    # Filter Kanopi Daun: Hilangkan kotak tumpang tindih dan buang tangkai memanjang
+    bibit_dets = select_best_leaf_boxes(img_bgr, bibit_dets)
 
     # ── 2. PER-CROP CLASSIFICATION (HANYA UNTUK BIBIT) ─────────
     all_results = []   # list of dict
