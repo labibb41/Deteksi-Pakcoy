@@ -72,30 +72,32 @@ print("✅ All MobileNetV2 models loaded!\n")
 # ─────────────────────────────────────────────────────────────
 
 def preprocess_crop(crop_bgr: np.ndarray) -> np.ndarray:
-    """Preprocess crop image untuk MobileNetV2."""
+    """Preprocess crop image untuk MobileNetV2 (konsisten dengan normalisasi 1/255)."""
     crop_rgb  = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
     crop_pil  = Image.fromarray(crop_rgb).resize(IMG_SIZE)
-    arr       = np.array(crop_pil, dtype=np.float32)
-    arr       = tf.keras.applications.mobilenet_v2.preprocess_input(arr)
+    arr       = np.array(crop_pil, dtype=np.float32) / 255.0
     return np.expand_dims(arr, axis=0)   # (1, 224, 224, 3)
 
 
 def predict_crop(crop_bgr: np.ndarray) -> dict:
     """
-    Jalankan crop melalui semua MobileNetV2 models.
+    Jalankan crop melalui semua MobileNetV2 models dengan Confidence Thresholding.
     Return dict: {model_name: (class_name, confidence)}
     """
     x = preprocess_crop(crop_bgr)
     results = {}
     for model_name, model in mobilenet_models.items():
-        preds   = model.predict(x, verbose=0)[0]           # shape (num_classes,)
-        idx     = int(np.argmax(preds))
-        # Sesuaikan jika num_classes model berbeda
-        if idx < len(CLASS_NAMES):
-            label = CLASS_NAMES[idx]
+        preds = model.predict(x, verbose=0)[0]  # shape (num_classes,)
+        p_berat, p_ringan, p_normal = float(preds[0]), float(preds[1]), float(preds[2])
+
+        # Confidence thresholding: default ke 'normal' jika indikasi etiolasi belum kuat
+        if p_berat >= 0.50 and p_berat > p_normal:
+            label, conf = "etiolasi_berat", p_berat
+        elif p_ringan >= 0.55 and p_ringan > p_normal:
+            label, conf = "etiolasi_ringan", p_ringan
         else:
-            label = f"class_{idx}"
-        conf  = float(preds[idx])
+            label, conf = "normal", p_normal
+
         results[model_name] = (label, conf)
     return results
 

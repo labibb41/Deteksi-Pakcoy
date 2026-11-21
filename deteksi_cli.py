@@ -41,6 +41,12 @@ MOBILENET_MODELS = {
 
 CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 
+# ── AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD) ──
+# Bibit secara alami adalah tanaman sehat (normal).
+# Baru dicap etiolasi jika model benar-benar yakin (>= threshold).
+THRESH_ETIOLASI_RINGAN = 0.55  # Keyakinan minimal 55% untuk etiolasi ringan
+THRESH_ETIOLASI_BERAT  = 0.50  # Keyakinan minimal 50% untuk etiolasi berat
+
 # ── WARNA (Format BGR OpenCV) ──
 COLOR_KOTAK_ISI   = (255, 120, 0)   # KOTAK TRAY BERISI: BIRU
 COLOR_KOTAK_EMPTY = (130, 130, 130) # KOTAK TRAY KOSONG: ABU-ABU
@@ -273,8 +279,7 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
             if crop.size > 0 and crop.shape[0] >= 5 and crop.shape[1] >= 5:
                 crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
                 crop_pil = Image.fromarray(crop_rgb).resize((224, 224))
-                arr = np.array(crop_pil, dtype=np.float32)
-                arr = tf.keras.applications.mobilenet_v2.preprocess_input(arr)
+                arr = np.array(crop_pil, dtype=np.float32) / 255.0  # Normalisasi [0, 1] sesuai training Colab
                 crops_to_classify.append(arr)
                 crop_slot_map.append(slot_info)
 
@@ -291,12 +296,24 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
 
         for m_name, model in mobilenet_models.items():
             preds = model.predict(batch_x, batch_size=32, verbose=0)
-            pred_indices = np.argmax(preds, axis=1)
-            pred_confs = np.max(preds, axis=1)
 
-            for slot_item, idx, conf in zip(crop_slot_map, pred_indices, pred_confs):
-                lbl = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else f"class_{idx}"
-                slot_item["preds"][m_name] = (lbl, float(conf))
+            for slot_item, p in zip(crop_slot_map, preds):
+                p_berat, p_ringan, p_normal = float(p[0]), float(p[1]), float(p[2])
+                
+                # Ambang batas keyakinan (Confidence Threshold):
+                # Kondisi bibit default adalah NORMAL/sehat.
+                # Baru dinyatakan etiolasi jika probabilitasnya melewati batas yakin.
+                if p_berat >= THRESH_ETIOLASI_BERAT and p_berat > p_normal:
+                    lbl = "etiolasi_berat"
+                    conf = p_berat
+                elif p_ringan >= THRESH_ETIOLASI_RINGAN and p_ringan > p_normal:
+                    lbl = "etiolasi_ringan"
+                    conf = p_ringan
+                else:
+                    lbl = "normal"
+                    conf = p_normal
+
+                slot_item["preds"][m_name] = (lbl, conf)
 
     # Untuk slot kosong
     for slot in tray_slots:
