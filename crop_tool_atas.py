@@ -425,8 +425,8 @@ def main():
     stats = {'normal': 0, 'etiolasi_ringan': 0, 'etiolasi_berat': 0, 'empty': 0}
     count_existing(dataset_folder, stats)
 
-    # Muat riwayat crop persisten
-    labeled_history = load_persistent_history(dataset_folder)
+    # Mulai dengan riwayat crop bersih (TIDAK ADA kotak lama bawaan saat buka awal!)
+    labeled_history = {}
 
     WIN_MAIN = "CROP TOOL PAKCOY - TOP VIEW"
     WIN_PREV = "Preview Crop"
@@ -540,19 +540,29 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
                 state["flash_timer"] -= 1
 
-            # Ambil riwayat crop untuk foto saat ini
+            # 3. TAMPILKAN JEJAK KOTAK DARI SETIAP BIBIT YANG SUDAH DILABELI
             current_crops = labeled_history.get(img_key, [])
+            for c_idx, crop_item in enumerate(current_crops, start=1):
+                _, c_cls, bx1, by1, bx2, by2 = crop_item
+                cx1 = int(ox + (bx1 - rx1) * scale)
+                cy1 = int(oy + (by1 - ry1) * scale)
+                cx2 = int(ox + (bx2 - rx1) * scale)
+                cy2 = int(oy + (by2 - ry1) * scale)
 
-            # (Opsional) Tampilkan jejak tipis hanya jika user mengaktifkan [H]
-            if state["show_past_boxes"]:
-                for c_idx, crop_item in enumerate(current_crops, start=1):
-                    _, c_cls, bx1, by1, bx2, by2 = crop_item
-                    cx1 = int(ox + (bx1 - rx1) * scale)
-                    cy1 = int(oy + (by1 - ry1) * scale)
-                    cx2 = int(ox + (bx2 - rx1) * scale)
-                    cy2 = int(oy + (by2 - ry1) * scale)
-                    col = CLASS_COLOR.get(c_cls, (255, 255, 255))
-                    cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), col, 1)
+                col = CLASS_COLOR.get(c_cls, (255, 255, 255))
+                # Border hitam 3px + border warna kelas 2px agar sangat jelas dan rapi
+                cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), (0, 0, 0), 3)
+                cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), col, 2)
+
+                # Badge label nomor dan kelas
+                lbl_badge = f"#{c_idx} {c_cls[:6].upper()}"
+                bw_badge = len(lbl_badge) * 7 + 8
+                bh_badge = 16
+                top_badge = max(oy, cy1 - bh_badge)
+                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + bh_badge), (0, 0, 0), -1)
+                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + bh_badge), col, 1)
+                cv2.putText(canvas, lbl_badge, (cx1 + 3, top_badge + 12),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.34, (255, 255, 255), 1, cv2.LINE_AA)
 
             # 4. Gambar kotak crop yang SEDANG ditarik / PENDING
             if state["crop_state"] in ("DRAWING", "PENDING"):
