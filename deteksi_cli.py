@@ -45,9 +45,10 @@ CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 
 # ── AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD) ──
 # Bibit secara alami adalah tanaman sehat (normal).
-# Baru dicap etiolasi jika model benar-benar yakin (>= threshold).
-THRESH_ETIOLASI_RINGAN = 0.55  # Keyakinan minimal 55% untuk etiolasi ringan
-THRESH_ETIOLASI_BERAT  = 0.50  # Keyakinan minimal 50% untuk etiolasi berat
+# Semakin RENDAH THRESH_NORMAL atau semakin TINGGI THRESH_ETIOLASI, bibit semakin diprioritaskan NORMAL.
+THRESH_NORMAL          = 0.35  # Jika probabilitas normal >= 35%, bibit langsung diprioritaskan NORMAL
+THRESH_ETIOLASI_RINGAN = 0.70  # Etiolasi ringan harus yakin minimal 70% baru diakui (mencegah salah tuduh)
+THRESH_ETIOLASI_BERAT  = 0.65  # Etiolasi berat harus yakin minimal 65% baru diakui
 
 # ── WARNA & DISPLAY SESUAI DESAIN TRAY PAKCOY (Format BGR OpenCV) ──
 COLOR_KOTAK_ISI   = (255, 180, 0)   # KOTAK TRAY: CYAN / BIRU MUDA (sesuai referensi)
@@ -465,11 +466,11 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
                 
                 # Ambang batas keyakinan (Confidence Threshold):
                 # Kondisi bibit default adalah NORMAL/sehat.
-                # Baru dinyatakan etiolasi jika probabilitasnya melewati batas yakin.
+                # Prioritaskan NORMAL jika nilai normal >= THRESH_NORMAL, kecuali etiolasi benar-benar dominan
                 if p_berat >= THRESH_ETIOLASI_BERAT and p_berat > p_normal:
                     lbl = "etiolasi_berat"
                     conf = p_berat
-                elif p_ringan >= THRESH_ETIOLASI_RINGAN and p_ringan > p_normal:
+                elif p_ringan >= THRESH_ETIOLASI_RINGAN and p_ringan > p_normal and p_normal < THRESH_NORMAL:
                     lbl = "etiolasi_ringan"
                     conf = p_ringan
                 else:

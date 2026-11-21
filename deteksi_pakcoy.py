@@ -88,9 +88,13 @@ def preprocess_crop(crop_bgr: np.ndarray) -> np.ndarray:
     return np.expand_dims(arr, axis=0)   # (1, 224, 224, 3)
 
 
-def predict_crop(crop_bgr: np.ndarray) -> dict:
+def predict_crop(crop_bgr: np.ndarray,
+                 thresh_ringan: float = 0.70,
+                 thresh_berat: float = 0.65,
+                 thresh_normal: float = 0.35) -> dict:
     """
     Jalankan crop melalui semua MobileNetV2 models dengan Confidence Thresholding.
+    Prioritaskan 'normal' jika p_normal >= thresh_normal atau etiolasi belum kuat.
     Return dict: {model_name: (class_name, confidence)}
     """
     x = preprocess_crop(crop_bgr)
@@ -99,10 +103,10 @@ def predict_crop(crop_bgr: np.ndarray) -> dict:
         preds = model.predict(x, verbose=0)[0]  # shape (num_classes,)
         p_berat, p_ringan, p_normal = float(preds[0]), float(preds[1]), float(preds[2])
 
-        # Confidence thresholding: default ke 'normal' jika indikasi etiolasi belum kuat
-        if p_berat >= 0.50 and p_berat > p_normal:
+        # Prioritas Normal: jika p_normal >= thresh_normal dan p_ringan < thresh_ringan -> NORMAL
+        if p_berat >= thresh_berat and p_berat > p_normal:
             label, conf = "etiolasi_berat", p_berat
-        elif p_ringan >= 0.55 and p_ringan > p_normal:
+        elif p_ringan >= thresh_ringan and p_ringan > p_normal and p_normal < thresh_normal:
             label, conf = "etiolasi_ringan", p_ringan
         else:
             label, conf = "normal", p_normal
@@ -113,15 +117,18 @@ def predict_crop(crop_bgr: np.ndarray) -> dict:
 
 def run_pipeline(image_pil: Image.Image,
                  yolo_conf: float = YOLO_CONF,
-                 yolo_iou:  float = YOLO_IOU):
+                 yolo_iou:  float = YOLO_IOU,
+                 thresh_ringan: float = 0.70,
+                 thresh_berat: float = 0.65,
+                 thresh_normal: float = 0.35):
     """
     Pipeline utama:
-      1. YOLO detect → crop per tanaman
-      2. Tiap crop → semua MobileNetV2 models
-      3. Buat visualisasi gabungan + tabel per model
+      1. YOLO detect → bedakan 'bibit' dan 'kotak' agar TIDAK TUMPANG TINDIH
+      2. Tiap crop bibit → MobileNetV2 dengan filter threshold
+      3. Buat visualisasi gambar (kotak cyan + bibit dynamic badge) + tabel ringkasan
     """
     if image_pil is None:
-        return None, "⚠️ Tidak ada gambar yang di-upload.", "", "", ""
+        return None, "⚠️ Tidak ada gambar yang di-upload.", "", "", "", None
 
     # Konversi ke BGR untuk OpenCV / YOLO
     img_rgb  = np.array(image_pil)
@@ -134,7 +141,7 @@ def run_pipeline(image_pil: Image.Image,
     boxes        = result.boxes
 
     if boxes is None or len(boxes) == 0:
-        return image_pil, "⚠️ Tidak ada objek terdeteksi oleh YOLO.", "", "", ""
+        return image_pil, "⚠️ Tidak ada objek terdeteksi oleh YOLO.", "", "", "", None
 
     detections = []   # list of (x1,y1,x2,y2, yolo_conf, yolo_cls)
     for box in boxes:
@@ -145,13 +152,22 @@ def run_pipeline(image_pil: Image.Image,
         ycls   = int(box.cls[0]) if box.cls is not None else -1
         detections.append((x1, y1, x2, y2, yconf, ycls))
 
-    # ── 2. PER-CROP CLASSIFICATION ─────────────────────────────
+    # PISAHKAN AGAR TIDAK TUMPANG TINDIH:
+    # ycls 0 = bibit (tanaman), ycls 1 = kotak (tray)
+    bibit_dets = [d for d in detections if d[5] == 0]
+    kotak_dets = [d for d in detections if d[5] == 1]
+    
+    # Jika YOLO hanya punya 1 kelas atau belum ada cls 0, gunakan semua
+    if not bibit_dets:
+        bibit_dets = detections
+
+    # ── 2. PER-CROP CLASSIFICATION (HANYA UNTUK BIBIT) ─────────
     all_results = []   # list of dict
-    for (x1, y1, x2, y2, yconf, ycls) in detections:
+    for (x1, y1, x2, y2, yconf, ycls) in bibit_dets:
         crop = img_bgr[y1:y2, x1:x2]
         if crop.size == 0:
             continue
-        mob_preds = predict_crop(crop)
+        mob_preds = predict_crop(crop, thresh_ringan, thresh_berat, thresh_normal)
         all_results.append({
             "bbox":      (x1, y1, x2, y2),
             "yolo_conf": yconf,
@@ -163,7 +179,6 @@ def run_pipeline(image_pil: Image.Image,
     n_plants = len(all_results)
 
     # ── 3. BUILD ANNOTATED IMAGE ───────────────────────────────
-    # Prioritaskan model optimasi terbaru / murni sebagai label utama di gambar
     preferred_models = [
         "MobileNetV2 Optimasi (Terbaru)",
         "MobileNetV2 Murni (Terbaru)",
@@ -173,6 +188,14 @@ def run_pipeline(image_pil: Image.Image,
     PRIMARY_MODEL = next((m for m in preferred_models if m in mobilenet_models), list(mobilenet_models.keys())[0] if mobilenet_models else "None")
     
     vis = img_rgb.copy()
+    
+    # 3a. Gambar kisi slot tray (cyan outline #0, #1, dst)
+    for idx, (kx1, ky1, kx2, ky2, _, _) in enumerate(kotak_dets):
+        cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), (0, 180, 255), 1)
+        cv2.putText(vis, f"#{idx}", (kx1 + 2, ky1 + 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.30, (0, 180, 255), 1, cv2.LINE_AA)
+
+    # 3b. Gambar kotak bibit dinamis (hijau/oranye/merah + badge)
     for item in all_results:
         x1, y1, x2, y2 = item["bbox"]
         label, conf     = item["mob_preds"].get(
@@ -342,11 +365,17 @@ with gr.Blocks(title="🌿 Deteksi Pakcoy", css=css, theme=gr.themes.Soft()) as 
     with gr.Row():
         with gr.Column(scale=1):
             inp_image   = gr.Image(type="pil", label="📷 Upload Gambar Pakcoy")
-            with gr.Accordion("⚙️ Pengaturan YOLO", open=False):
+            with gr.Accordion("⚙️ Pengaturan Ambang Batas & Prioritas Normal", open=True):
                 slider_conf = gr.Slider(0.1, 0.9, value=0.25, step=0.05,
-                                        label="Confidence Threshold")
+                                        label="Confidence YOLO (Deteksi Bibit)")
                 slider_iou  = gr.Slider(0.1, 0.9, value=0.45, step=0.05,
-                                        label="IoU Threshold")
+                                        label="IoU NMS YOLO")
+                slider_ringan = gr.Slider(0.4, 0.95, value=0.70, step=0.05,
+                                          label="Ambang Etiolasi Ringan (Tinggikan agar tidak tumpang tindih)")
+                slider_berat  = gr.Slider(0.4, 0.95, value=0.65, step=0.05,
+                                          label="Ambang Etiolasi Berat")
+                slider_normal = gr.Slider(0.1, 0.8, value=0.35, step=0.05,
+                                          label="Prioritas Normal (Jika prob >= ini, bibit jadi NORMAL)")
             btn_run     = gr.Button("🚀 Jalankan Deteksi", variant="primary", size="lg")
 
         with gr.Column(scale=2):
@@ -362,17 +391,17 @@ with gr.Blocks(title="🌿 Deteksi Pakcoy", css=css, theme=gr.themes.Soft()) as 
 
     btn_run.click(
         fn=run_pipeline,
-        inputs=[inp_image, slider_conf, slider_iou],
+        inputs=[inp_image, slider_conf, slider_iou, slider_ringan, slider_berat, slider_normal],
         outputs=[out_image, out_status, out_v1, out_v2, out_v3, out_crops],
     )
 
     test_img_path = os.path.join(BASE_DIR, "test_tray.jpg")
-    examples_list = [[test_img_path, 0.25, 0.45]] if os.path.exists(test_img_path) else []
+    examples_list = [[test_img_path, 0.25, 0.45, 0.70, 0.65, 0.35]] if os.path.exists(test_img_path) else []
     
     if examples_list:
         gr.Examples(
             examples=examples_list,
-            inputs=[inp_image, slider_conf, slider_iou],
+            inputs=[inp_image, slider_conf, slider_iou, slider_ringan, slider_berat, slider_normal],
             label="📌 Contoh Gambar",
         )
 
