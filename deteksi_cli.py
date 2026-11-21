@@ -2,7 +2,7 @@
 ==============================================================
   DETEKSI PAKCOY - CLI TERMINAL VERSION
   Pipeline: YOLO26n-Seg  -->  MobileNetV2 (V1, V2, V3)
-  Tanpa Browser / Web UI — Langsung di Terminal
+  Dengan Pemilih File (Pop-up Explorer / Drag & Drop / Default)
 ==============================================================
 """
 
@@ -69,8 +69,40 @@ for name, path in MOBILENET_MODELS.items():
 print("─"*65, flush=True)
 
 
+def clean_path(p):
+    """Membersihkan path dari format drag-and-drop PowerShell (& '...')."""
+    p = p.strip()
+    if p.startswith('&'):
+        p = p[1:].strip()
+    p = p.strip("'").strip('"').strip()
+    return p
+
+
+def choose_file_dialog():
+    """Membuka jendela pop-up File Explorer standar Windows untuk memilih gambar."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        fpath = filedialog.askopenfilename(
+            title="Pilih Gambar Tanaman Pakcoy",
+            initialdir=BASE_DIR,
+            filetypes=[
+                ("File Gambar", "*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.JPG;*.JPEG;*.PNG"),
+                ("Semua File", "*.*")
+            ]
+        )
+        root.destroy()
+        return fpath
+    except Exception as e:
+        print(f"⚠️ Pop-up file picker tidak tersedia: {e}", flush=True)
+        return ""
+
+
 def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
-    img_path = img_path.strip().strip("'").strip('"')
+    img_path = clean_path(img_path)
 
     if not os.path.exists(img_path):
         print(f"\n❌ Error: File gambar tidak ditemukan: {img_path}", flush=True)
@@ -197,19 +229,28 @@ def main():
         default_img = os.path.join(BASE_DIR, "test_tray.jpg")
         while True:
             print("\n" + "─"*65, flush=True)
-            print("Masukkan path gambar yang ingin dideteksi:", flush=True)
-            print("  - Bisa DRAG & DROP file gambar langsung ke terminal ini", flush=True)
-            print("  - Atau tekan Enter langsung untuk memakai default: test_tray.jpg", flush=True)
-            print("  - Ketik 'q' lalu Enter untuk keluar", flush=True)
-            p = input("\nPath gambar > ").strip()
+            print("PILIH CARA MEMASUKKAN GAMBAR:", flush=True)
+            print("  [1] Tekan ENTER langsung  --> Buka jendela PILIH FILE dari komputer", flush=True)
+            print("  [2] Drag & Drop file foto --> Tarik file ke sini lalu tekan Enter", flush=True)
+            print("  [3] Ketik 'd'             --> Pakai gambar contoh bawaan (test_tray.jpg)", flush=True)
+            print("  [4] Ketik 'q'             --> Keluar program", flush=True)
+            p = input("\nPilihan kamu > ").strip()
 
             if p.lower() in ['q', 'exit', 'quit']:
                 print("Sampai jumpa! 👋", flush=True)
                 break
-            if not p:
-                p = default_img
-
-            process_image(p)
+            elif p.lower() == 'd':
+                process_image(default_img)
+            elif not p:
+                # Buka jendela pop-up File Explorer!
+                print("📂 Membuka jendela pop-up File Explorer... (pilih foto kamu)", flush=True)
+                selected = choose_file_dialog()
+                if selected:
+                    process_image(selected)
+                else:
+                    print("⚠️ Batal memilih gambar.", flush=True)
+            else:
+                process_image(p)
 
 
 if __name__ == "__main__":
