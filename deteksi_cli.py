@@ -44,8 +44,8 @@ CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 # ── AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD) ──
 # Bibit secara alami adalah tanaman sehat (normal).
 # Baru dicap etiolasi jika model benar-benar yakin (>= threshold).
-THRESH_ETIOLASI_RINGAN = 0.55  # Keyakinan minimal 55% untuk etiolasi ringan
-THRESH_ETIOLASI_BERAT  = 0.50  # Keyakinan minimal 50% untuk etiolasi berat
+THRESH_ETIOLASI_RINGAN = 0.80  # Keyakinan minimal 55% untuk etiolasi ringan
+THRESH_ETIOLASI_BERAT  = 0.85  # Keyakinan minimal 50% untuk etiolasi berat
 
 # ── WARNA (Format BGR OpenCV) ──
 COLOR_KOTAK_ISI   = (255, 120, 0)   # KOTAK TRAY BERISI: BIRU
@@ -138,21 +138,11 @@ def draw_detection_view(orig_img, tray_slots, model_name):
             cv2.putText(vis, "EMPTY", (cx - 18, cy + 4),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.33, COLOR_EMPTY_TXT, 1, cv2.LINE_AA)
 
-    # Header Bar
-    bar_h = 42
-    overlay = vis.copy()
-    cv2.rectangle(overlay, (0, 0), (w, bar_h), (20, 20, 20), -1)
-    cv2.addWeighted(overlay, 0.8, vis, 0.2, 0, vis)
-    cv2.line(vis, (0, bar_h), (w, bar_h), COLOR_KOTAK_ISI, 2)
-
-    title_text = f"MODEL AKTIF: [{model_name}]  |  [1]=Augmented Baru  [2]=V3  [3]=Top V3  [ESC]=Tutup"
-    cv2.putText(vis, title_text, (10, 26),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 230, 255), 1, cv2.LINE_AA)
     return vis
 
 
 def show_interactive_display(views_dict, orig_shape):
-    win_name = "Hasil Deteksi Pakcoy YOLO26n + MobileNetV2 - [1-6: Ganti Model, ESC: Tutup]"
+    win_name = "Hasil Deteksi Pakcoy YOLO26n + MobileNetV2 - [Scroll: Zoom | Drag: Geser | 1-6: Model | ESC: Tutup]"
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
 
     orig_h, orig_w = orig_shape[:2]
@@ -170,28 +160,169 @@ def show_interactive_display(views_dict, orig_shape):
         ord('6'): model_keys[5] if len(model_keys) > 5 else None,
     }
 
-    # Default langsung tampilkan model baru (Augmented)
     current_model = "Augmented (Baru)" if "Augmented (Baru)" in views_dict else model_keys[0]
 
-    print("\n🖥️  Jendela tampilan Python telah terbuka!")
-    print("   👉 Tekan tombol '1' : ⭐ Model Augmented (Baru dari Colab)")
-    print("   👉 Tekan tombol '2' : Model V3 (Terbaru)")
-    print("   👉 Tekan tombol '3' : Model Top Pakcoy V3")
-    print("   👉 Tekan tombol '4' : Model Top Pakcoy")
-    print("   👉 Tekan tombol '5' : Model V2 (Baru)")
-    print("   👉 Tekan tombol '6' : Model V1 (Lama)")
-    print("   👉 Tekan tombol 'ESC' atau 'Q' untuk menutup jendela", flush=True)
+    # State interaktif Zoom & Pan
+    state = {
+        "zoom": 1.0,
+        "center_x": 0.5,
+        "center_y": 0.5,
+        "is_dragging": False,
+        "drag_start_x": 0,
+        "drag_start_y": 0,
+        "drag_start_cx": 0.5,
+        "drag_start_cy": 0.5,
+        "canvas_scale": 1.0,
+        "canvas_ox": 0,
+        "canvas_oy": 0,
+        "canvas_nw": disp_w,
+        "canvas_nh": disp_h,
+    }
+
+    def mouse_callback(event, mx, my, flags, param):
+        # 1. Mouse Wheel -> Zoom In / Zoom Out
+        if event == cv2.EVENT_MOUSEWHEEL:
+            if flags > 0:
+                state["zoom"] = min(8.0, state["zoom"] * 1.25)
+            else:
+                state["zoom"] = max(1.0, state["zoom"] / 1.25)
+
+            # Geser fokus ke arah kursor jika sedang di-zoom
+            if state["zoom"] > 1.0:
+                ox, oy = state["canvas_ox"], state["canvas_oy"]
+                nw, nh = state["canvas_nw"], state["canvas_nh"]
+                if nw > 0 and nh > 0:
+                    u = np.clip((mx - ox) / nw, 0.0, 1.0)
+                    v = np.clip((my - oy) / nh, 0.0, 1.0)
+                    state["center_x"] = np.clip(state["center_x"] + (u - 0.5) * 0.25 / state["zoom"], 0.0, 1.0)
+                    state["center_y"] = np.clip(state["center_y"] + (v - 0.5) * 0.25 / state["zoom"], 0.0, 1.0)
+            else:
+                state["center_x"] = 0.5
+                state["center_y"] = 0.5
+
+        # 2. Double Click -> Reset Zoom
+        elif event == cv2.EVENT_LBUTTONDBLCLK:
+            state["zoom"] = 1.0
+            state["center_x"] = 0.5
+            state["center_y"] = 0.5
+
+        # 3. Klik Kiri -> Mulai Drag / Pan
+        elif event == cv2.EVENT_LBUTTONDOWN:
+            state["is_dragging"] = True
+            state["drag_start_x"] = mx
+            state["drag_start_y"] = my
+            state["drag_start_cx"] = state["center_x"]
+            state["drag_start_cy"] = state["center_y"]
+
+        # 4. Geser Mouse saat Drag
+        elif event == cv2.EVENT_MOUSEMOVE:
+            if state["is_dragging"] and state["zoom"] > 1.0:
+                scale = max(1e-4, state["canvas_scale"])
+                dx = mx - state["drag_start_x"]
+                dy = my - state["drag_start_y"]
+                delta_cx = (dx / scale) / orig_w
+                delta_cy = (dy / scale) / orig_h
+                state["center_x"] = np.clip(state["drag_start_cx"] - delta_cx, 0.0, 1.0)
+                state["center_y"] = np.clip(state["drag_start_cy"] - delta_cy, 0.0, 1.0)
+
+        # 5. Lepas Klik Kiri -> Selesai Drag
+        elif event == cv2.EVENT_LBUTTONUP:
+            state["is_dragging"] = False
+
+    cv2.setMouseCallback(win_name, mouse_callback)
+
+    print("\n🖥️  Jendela tampilan Python telah dibuka!", flush=True)
+    print("   👉 Scroll Roda Mouse      : Zoom In / Zoom Out (Bebas melebar/gepeng!)", flush=True)
+    print("   👉 Klik & Drag Kiri       : Geser (Pan) melihat bibit dari dekat", flush=True)
+    print("   👉 Double-Click / [R]     : Reset Zoom kembali ke tampilan penuh", flush=True)
+    print("   👉 Tombol '+ / -'         : Zoom In / Zoom Out lewat keyboard", flush=True)
+    print("   👉 Tombol Panah           : Geser tampilan", flush=True)
+    print("   👉 Tombol '1' s.d '6'     : Ganti Model MobileNetV2", flush=True)
+    print("   👉 Tombol 'ESC' atau 'Q'  : Tutup jendela\n", flush=True)
 
     while True:
         img_to_show = views_dict.get(current_model)
-        if img_to_show is not None:
-            cv2.imshow(win_name, img_to_show)
+        if img_to_show is None:
+            break
 
-        key = cv2.waitKey(50) & 0xFF
+        # Dapatkan ukuran jendela saat ini (agar letterboxing selalu proporsional 1:1)
+        rect = cv2.getWindowImageRect(win_name)
+        win_w = rect[2] if (rect is not None and rect[2] > 50) else disp_w
+        win_h = rect[3] if (rect is not None and rect[3] > 50) else disp_h
+
+        # 1. Hitung Region of Interest (ROI) sesuai Zoom & Pan
+        zoom = state["zoom"]
+        crop_w = int(orig_w / zoom)
+        crop_h = int(orig_h / zoom)
+
+        cx = state["center_x"]
+        cy = state["center_y"]
+
+        x1 = int(np.clip(cx * orig_w - crop_w / 2, 0, max(0, orig_w - crop_w)))
+        y1 = int(np.clip(cy * orig_h - crop_h / 2, 0, max(0, orig_h - crop_h)))
+        x2 = min(orig_w, x1 + crop_w)
+        y2 = min(orig_h, y1 + crop_h)
+
+        cropped = img_to_show[y1:y2, x1:x2]
+        if cropped.size == 0:
+            cropped = img_to_show
+
+        # 2. Letterbox ke canvas jendela tanpa pernah merusak aspek rasio (tidak melebar!)
+        cw = cropped.shape[1]
+        ch = cropped.shape[0]
+        scale = min(win_w / cw, win_h / ch)
+        nw = max(1, int(cw * scale))
+        nh = max(1, int(ch * scale))
+        resized = cv2.resize(cropped, (nw, nh), interpolation=cv2.INTER_LINEAR)
+
+        canvas = np.zeros((win_h, win_w, 3), dtype=np.uint8)
+        ox = (win_w - nw) // 2
+        oy = (win_h - nh) // 2
+        canvas[oy:oy+nh, ox:ox+nw] = resized
+
+        # Simpan koordinat canvas untuk interaksi mouse
+        state["canvas_scale"] = scale
+        state["canvas_ox"] = ox
+        state["canvas_oy"] = oy
+        state["canvas_nw"] = nw
+        state["canvas_nh"] = nh
+
+        # 3. Bar Kontrol & Info di Bagian Atas
+        bar_h = 36
+        overlay = canvas.copy()
+        cv2.rectangle(overlay, (0, 0), (win_w, bar_h), (25, 25, 25), -1)
+        cv2.addWeighted(overlay, 0.85, canvas, 0.15, 0, canvas)
+        cv2.line(canvas, (0, bar_h), (win_w, bar_h), COLOR_KOTAK_ISI, 2)
+
+        status_txt = f"MODEL: [{current_model}]  |  ZOOM: {zoom:.1f}x  |  [Scroll/Drag]: Zoom & Geser  |  [R]: Reset  |  [1-6]: Model  |  [ESC]: Tutup"
+        cv2.putText(canvas, status_txt, (12, 24),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 235, 255), 1, cv2.LINE_AA)
+
+        cv2.imshow(win_name, canvas)
+
+        key = cv2.waitKey(25) & 0xFF
         if key in (27, ord('q'), ord('Q')):
             break
         elif key in key_map and key_map[key] is not None:
             current_model = key_map[key]
+        elif key in (ord('+'), ord('=')):
+            state["zoom"] = min(8.0, state["zoom"] * 1.25)
+        elif key in (ord('-'), ord('_')):
+            state["zoom"] = max(1.0, state["zoom"] / 1.25)
+            if state["zoom"] <= 1.0:
+                state["center_x"], state["center_y"] = 0.5, 0.5
+        elif key in (ord('r'), ord('R'), ord('0')):
+            state["zoom"] = 1.0
+            state["center_x"], state["center_y"] = 0.5, 0.5
+        # Tombol panah untuk menggeser pan
+        elif key == 82 or key == 2490368: # Panah Atas
+            state["center_y"] = max(0.0, state["center_y"] - 0.05 / state["zoom"])
+        elif key == 84 or key == 2621440: # Panah Bawah
+            state["center_y"] = min(1.0, state["center_y"] + 0.05 / state["zoom"])
+        elif key == 81 or key == 2424832: # Panah Kiri
+            state["center_x"] = max(0.0, state["center_x"] - 0.05 / state["zoom"])
+        elif key == 83 or key == 2555904: # Panah Kanan
+            state["center_x"] = min(1.0, state["center_x"] + 0.05 / state["zoom"])
 
     cv2.destroyAllWindows()
     print("🚪 Jendela tampilan ditutup.", flush=True)
