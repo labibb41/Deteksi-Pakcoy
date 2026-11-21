@@ -8,6 +8,13 @@
 
 import os
 import sys
+
+# ── AUTO-RELAUNCH DENGAN C:\penv JIKA DIPANGGIL DENGAN PYTHON BAWAAN ──
+PENV_PYTHON = r"C:\penv\Scripts\python.exe"
+if os.path.exists(PENV_PYTHON) and os.path.normpath(sys.executable).lower() != os.path.normpath(PENV_PYTHON).lower():
+    import subprocess
+    sys.exit(subprocess.call([PENV_PYTHON] + sys.argv))
+
 import warnings
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'

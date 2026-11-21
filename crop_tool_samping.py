@@ -35,6 +35,13 @@ import cv2
 import numpy as np
 import os
 import sys
+
+# ── AUTO-RELAUNCH DENGAN C:\penv ──
+PENV_PYTHON = r"C:\penv\Scripts\python.exe"
+if os.path.exists(PENV_PYTHON) and os.path.normpath(sys.executable).lower() != os.path.normpath(PENV_PYTHON).lower():
+    import subprocess
+    sys.exit(subprocess.call([PENV_PYTHON] + sys.argv))
+
 import glob
 from datetime import datetime
 from math import sqrt
