@@ -41,9 +41,9 @@ MOBILENET_MODELS = {
 CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 
 # ── WARNA (Format BGR OpenCV) ──
-COLOR_BIBIT_BOX = (255, 120, 0)   # BIRU CERAH (Bounding Box Bibit)
-COLOR_TRAY_GRID = (70, 70, 70)    # Abu-abu (Garis Kotak Slot Tray)
-COLOR_EMPTY_TXT = (180, 180, 180) # Abu-abu untuk slot Kosong
+COLOR_KOTAK_TRAY = (255, 120, 0)   # KOTAK LUBANG TRAY: BIRU
+COLOR_BIBIT_BOX  = (50, 220, 50)   # BIBIT TANAMAN: HIJAU
+COLOR_EMPTY_TXT  = (220, 150, 100) # Label EMPTY: Biru muda/Abu-abu
 
 # ─────────────────────────────────────────────────────────────
 #  IMPORT & LOAD MODELS
@@ -103,8 +103,8 @@ def choose_file_dialog():
 def draw_detection_view(orig_img, tray_slots, model_name):
     """
     Menggambar hasil deteksi:
-    - Garis tipis untuk kotak slot tray
-    - Kotak BIRU untuk bibit tanaman
+    - Kotak BIRU untuk slot lubang tray ('kotak')
+    - Kotak HIJAU untuk bibit tanaman ('bibit')
     - Teks label MobileNetV2 di atas bibit
     - Tanda 'EMPTY' jika slot tidak ada tanaman
     """
@@ -113,22 +113,23 @@ def draw_detection_view(orig_img, tray_slots, model_name):
 
     for slot in tray_slots:
         kx1, ky1, kx2, ky2 = slot["kotak_box"]
-        # Gambar batas kotak slot tray (garis halus)
-        cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), COLOR_TRAY_GRID, 1)
+        
+        # 1. KOTAK LUBANG TRAY: WARNA BIRU
+        cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), COLOR_KOTAK_TRAY, 2)
 
         if slot["has_bibit"]:
             bx1, by1, bx2, by2 = slot["bibit_box"]
             label, conf = slot["preds"][model_name]
             
-            # 1. KOTAK BIRU untuk bibit
+            # 2. BIBIT TANAMAN: KOTAK HIJAU
             cv2.rectangle(vis, (bx1, by1), (bx2, by2), COLOR_BIBIT_BOX, 2)
             
-            # 2. Label Teks
-            txt = f"{label[:3]} {conf:.0%}"
-            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.36, 1)
-            cv2.rectangle(vis, (bx1, max(0, by1 - th - 5)), (bx1 + tw + 2, by1), (25, 25, 25), -1)
-            cv2.putText(vis, txt, (bx1 + 1, by1 - 3),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.36, (255, 255, 255), 1, cv2.LINE_AA)
+            # 3. Label Hasil Klasifikasi
+            txt = f"{label} {conf:.0%}"
+            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)
+            cv2.rectangle(vis, (bx1, max(0, by1 - th - 5)), (bx1 + tw + 3, by1), (20, 20, 20), -1)
+            cv2.putText(vis, txt, (bx1 + 2, by1 - 3),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (50, 255, 50), 1, cv2.LINE_AA)
         else:
             # Slot KOSONG (EMPTY)
             cx, cy = (kx1 + kx2) // 2, (ky1 + ky2) // 2
@@ -140,11 +141,11 @@ def draw_detection_view(orig_img, tray_slots, model_name):
     overlay = vis.copy()
     cv2.rectangle(overlay, (0, 0), (w, bar_h), (20, 20, 20), -1)
     cv2.addWeighted(overlay, 0.8, vis, 0.2, 0, vis)
-    cv2.line(vis, (0, bar_h), (w, bar_h), COLOR_BIBIT_BOX, 2)
+    cv2.line(vis, (0, bar_h), (w, bar_h), COLOR_KOTAK_TRAY, 2)
 
-    title_text = f"MODEL: {model_name}  |  Kotak Bibit: BIRU  |  [1]=V1  [2]=V2  [3]=V3  [4]=Jejer 3  [ESC]=Tutup"
+    title_text = f"MODEL: {model_name}  |  Kotak Tray: BIRU  |  Bibit: HIJAU  |  [1]=V1  [2]=V2  [3]=V3  [ESC]=Tutup"
     cv2.putText(vis, title_text, (10, 26),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 230, 255), 1, cv2.LINE_AA)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 230, 255), 1, cv2.LINE_AA)
     return vis
 
 
