@@ -220,28 +220,29 @@ def create_train_val_split():
 # ───────────────────────────────────────────────────────────────
 #  MENU 4: EXPORT ZIP UNTUK COLAB
 # ───────────────────────────────────────────────────────────────
-def export_for_colab():
+def export_for_colab(choice=None):
     print("\n" + "="*65)
     print("  📦 EXPORT DATASET → ZIP UNTUK GOOGLE COLAB")
     print("="*65)
 
-    # Pilih dataset yang akan di-zip
-    print("\n  Yang akan di-zip:")
-    print(f"    1. Dataset split (train/val): {SPLIT_OUTPUT}")
-    print(f"    2. Dataset utama (V3): {MAIN_DATASET}")
-    choice = input("\n  Pilih (1/2, default=1): ").strip() or "1"
+    if choice is None:
+        # Pilih dataset yang akan di-zip
+        print("\n  Yang akan di-zip:")
+        print(f"    1. Dataset split (train/val): {SPLIT_OUTPUT}")
+        print(f"    2. Dataset utama (V3): {MAIN_DATASET}")
+        choice = input("\n  Pilih (1/2, default=2): ").strip() or "2"
 
-    if choice == "2":
-        src = MAIN_DATASET
-        zip_name = os.path.join(BASE, f"dataset_main_{datetime.now().strftime('%Y%m%d_%H%M')}.zip")
-    else:
+    if choice == "1":
         src = SPLIT_OUTPUT
         zip_name = os.path.join(BASE, f"dataset_split_{datetime.now().strftime('%Y%m%d_%H%M')}.zip")
+    else:
+        src = MAIN_DATASET
+        zip_name = os.path.join(BASE, f"dataset_top_v3_updated_{datetime.now().strftime('%Y%m%d_%H%M')}.zip")
 
     if not os.path.isdir(src):
         print(f"  ⚠️  Folder tidak ditemukan: {src}")
         print("  Jalankan Split terlebih dahulu (menu 3)")
-        return
+        return None
 
     print(f"\n  Membuat zip dari: {src}")
     print(f"  Output: {zip_name}")
@@ -336,6 +337,24 @@ def show_combined_logic():
 #  MAIN MENU
 # ───────────────────────────────────────────────────────────────
 def main():
+    # Cek apakah ada argumen dari command line
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1].lower().strip()
+        if cmd in ("merge", "--merge", "2"):
+            merge_new_to_main()
+            return
+        elif cmd in ("zip", "--zip", "4"):
+            export_for_colab("2")
+            return
+        elif cmd in ("all", "--all"):
+            print("\n🚀 MENJALANKAN MERGE + ZIP OTOMATIS...")
+            merge_new_to_main()
+            export_for_colab("2")
+            return
+        elif cmd in ("stats", "--stats", "1"):
+            show_stats()
+            return
+
     menu_items = {
         "1": ("📊 Lihat statistik semua dataset",         show_stats),
         "2": ("🔀 Merge dataset baru → dataset utama",    merge_new_to_main),
