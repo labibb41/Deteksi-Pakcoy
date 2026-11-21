@@ -425,7 +425,7 @@ def main():
     stats = {'normal': 0, 'etiolasi_ringan': 0, 'etiolasi_berat': 0, 'empty': 0}
     count_existing(dataset_folder, stats)
 
-    # Mulai dengan riwayat crop bersih (TIDAK ADA kotak lama bawaan saat buka awal!)
+    # Riwayat crop sesi ini (Mulai dengan tampilan bersih tanpa kotak hantu masa lalu)
     labeled_history = {}
 
     WIN_MAIN = "CROP TOOL PAKCOY - TOP VIEW"
@@ -540,7 +540,7 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
                 state["flash_timer"] -= 1
 
-            # 3. TAMPILKAN JEJAK KOTAK DARI SETIAP BIBIT YANG SUDAH DILABELI
+            # 3. GAMBAR JEJAK KOTAK DARI BIBIT YANG SUDAH DILABELI
             current_crops = labeled_history.get(img_key, [])
             for c_idx, crop_item in enumerate(current_crops, start=1):
                 _, c_cls, bx1, by1, bx2, by2 = crop_item
@@ -550,19 +550,19 @@ def main():
                 cy2 = int(oy + (by2 - ry1) * scale)
 
                 col = CLASS_COLOR.get(c_cls, (255, 255, 255))
-                # Border hitam 3px + border warna kelas 2px agar sangat jelas dan rapi
+                # Border hitam 3px + border warna 2px agar sangat jelas dan rapi
                 cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), (0, 0, 0), 3)
                 cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), col, 2)
 
-                # Badge label nomor dan kelas
-                lbl_badge = f"#{c_idx} {c_cls[:6].upper()}"
-                bw_badge = len(lbl_badge) * 7 + 8
-                bh_badge = 16
-                top_badge = max(oy, cy1 - bh_badge)
-                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + bh_badge), (0, 0, 0), -1)
-                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + bh_badge), col, 1)
-                cv2.putText(canvas, lbl_badge, (cx1 + 3, top_badge + 12),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.34, (255, 255, 255), 1, cv2.LINE_AA)
+                # Label ringkas: "#1 N", "#2 R", "#3 B", "#4 K"
+                cls_initial = "N" if c_cls == "normal" else ("R" if c_cls == "etiolasi_ringan" else ("B" if c_cls == "etiolasi_berat" else "K"))
+                short_lbl = f"#{c_idx} {cls_initial}"
+                bw_badge = len(short_lbl) * 7 + 8
+                top_badge = max(oy, cy1 - 16)
+                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + 16), (0, 0, 0), -1)
+                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + 16), col, 1)
+                cv2.putText(canvas, short_lbl, (cx1 + 4, top_badge + 12),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
 
             # 4. Gambar kotak crop yang SEDANG ditarik / PENDING
             if state["crop_state"] in ("DRAWING", "PENDING"):
@@ -735,11 +735,22 @@ def main():
             elif key in (83, 2555904): # Panah Kanan
                 state["center_x"] = min(1.0, state["center_x"] + 0.05 / state["zoom"])
 
-            # TOGGLE LIHAT JEJAK: H
-            elif key in (ord('h'), ord('H')):
-                state["show_past_boxes"] = not state["show_past_boxes"]
-                saved_msg = "Jejak kotak: AKTIF" if state["show_past_boxes"] else "Jejak kotak: NONAKTIF (Tampilan Bersih)"
-                saved_timer = 35
+            # BERSIHKAN SEMUA KOTAK DI FOTO INI: C (saat IDLE)
+            elif key in (ord('c'), ord('C')) and state["crop_state"] == "IDLE":
+                crops_list = labeled_history.get(img_key, [])
+                if crops_list:
+                    for item in crops_list:
+                        fpath, cls = item[0], item[1]
+                        if os.path.exists(fpath):
+                            try:
+                                os.remove(fpath)
+                            except:
+                                pass
+                        stats[cls] = max(0, stats.get(cls, 0) - 1)
+                    labeled_history[img_key] = []
+                    saved_msg = "🧹 Semua kotak pada foto ini telah dibersihkan."
+                    saved_timer = 40
+                    print("🧹 Semua kotak pada foto ini telah dibersihkan.")
 
             # UNDO CROP TERAKHIR: Z
             elif key in (ord('z'), ord('Z')):
@@ -752,7 +763,6 @@ def main():
                         except:
                             pass
                     stats[cls] = max(0, stats.get(cls, 0) - 1)
-                    save_persistent_history(dataset_folder, labeled_history)
                     saved_msg = f"↩️  UNDO: Crop {os.path.basename(fpath)} dihapus."
                     saved_timer = 40
                     print(f"↩️  [UNDO] {os.path.basename(fpath)} dihapus.")
