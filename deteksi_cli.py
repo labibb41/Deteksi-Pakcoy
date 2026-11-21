@@ -44,8 +44,8 @@ CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 # ── AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD) ──
 # Bibit secara alami adalah tanaman sehat (normal).
 # Baru dicap etiolasi jika model benar-benar yakin (>= threshold).
-THRESH_ETIOLASI_RINGAN = 0.80  # Keyakinan minimal 55% untuk etiolasi ringan
-THRESH_ETIOLASI_BERAT  = 0.85  # Keyakinan minimal 50% untuk etiolasi berat
+THRESH_ETIOLASI_RINGAN = 0.55  # Keyakinan minimal 55% untuk etiolasi ringan
+THRESH_ETIOLASI_BERAT  = 0.50  # Keyakinan minimal 50% untuk etiolasi berat
 
 # ── WARNA (Format BGR OpenCV) ──
 COLOR_KOTAK_ISI   = (255, 120, 0)   # KOTAK TRAY BERISI: BIRU
