@@ -31,6 +31,7 @@ YOLO_WEIGHTS = os.path.join(BASE_DIR, "exp_pakcoy_yolo26_seg_v4", "weights", "be
 
 # DAFTAR MODEL KLASIFIKASI (Model Murni Baru di urutan pertama!)
 MOBILENET_MODELS = {
+    "Optimasi (Terbaru)": os.path.join(BASE_DIR, "mobilenetv2_pakcoy_opt.h5"),
     "Murni (Terbaru)":  os.path.join(BASE_DIR, "mobilenetv2_pakcoy_murni.h5"),
     "Augmented":        os.path.join(BASE_DIR, "mobilenetv2_pakcoy_augmented.h5"),
     "V3 (Terbaru)":     os.path.join(BASE_DIR, "mobilenetv2_v3_terbaru.h5"),
@@ -45,14 +46,27 @@ CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 # ── AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD) ──
 # Bibit secara alami adalah tanaman sehat (normal).
 # Baru dicap etiolasi jika model benar-benar yakin (>= threshold).
-THRESH_ETIOLASI_RINGAN = 0.80  # Keyakinan minimal 55% untuk etiolasi ringan
-THRESH_ETIOLASI_BERAT  = 0.85  # Keyakinan minimal 50% untuk etiolasi berat
+THRESH_ETIOLASI_RINGAN = 0.55  # Keyakinan minimal 55% untuk etiolasi ringan
+THRESH_ETIOLASI_BERAT  = 0.50  # Keyakinan minimal 50% untuk etiolasi berat
 
-# ── WARNA (Format BGR OpenCV) ──
-COLOR_KOTAK_ISI   = (255, 120, 0)   # KOTAK TRAY BERISI: BIRU
-COLOR_KOTAK_EMPTY = (130, 130, 130) # KOTAK TRAY KOSONG: ABU-ABU
-COLOR_BIBIT_BOX   = (50, 220, 50)   # BIBIT TANAMAN: HIJAU
-COLOR_EMPTY_TXT   = (190, 190, 190) # TEKS EMPTY: ABU-ABU TERANG
+# ── WARNA & DISPLAY SESUAI DESAIN TRAY PAKCOY (Format BGR OpenCV) ──
+COLOR_KOTAK_ISI   = (255, 180, 0)   # KOTAK TRAY: CYAN / BIRU MUDA (sesuai referensi)
+COLOR_KOTAK_EMPTY = (120, 120, 120) # KOTAK TRAY KOSONG: ABU-ABU
+COLOR_EMPTY_TXT   = (180, 180, 180) # TEKS EMPTY: ABU-ABU TERANG
+
+CLASS_COLORS = {
+    "normal":          (0,   220, 0),    # Hijau Terang
+    "etiolasi_ringan": (0,   165, 255),  # Oranye / Kuning Emas
+    "etiolasi_berat":  (0,   0,   230),  # Merah Terang
+    "empty":           (140, 140, 140),  # Abu-abu
+}
+
+CLASS_DISPLAY_NAMES = {
+    "normal":          "Normal",
+    "etiolasi_ringan": "Et. Ringan",
+    "etiolasi_berat":  "Et. Berat",
+    "empty":           "Empty",
+}
 
 # ─────────────────────────────────────────────────────────────
 #  IMPORT & LOAD MODELS
@@ -113,31 +127,44 @@ def draw_detection_view(orig_img, tray_slots, model_name):
     vis = orig_img.copy()
     h, w = vis.shape[:2]
 
-    for slot in tray_slots:
+    for idx, slot in enumerate(tray_slots):
         kx1, ky1, kx2, ky2 = slot["kotak_box"]
 
         if slot["has_bibit"]:
-            # 1. KOTAK TRAY BERISI: WARNA BIRU
-            cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), COLOR_KOTAK_ISI, 2)
+            # 1. KOTAK TRAY LUBANG: GARIS CYAN / BIRU MUDA (PERSIS FOTO REFERENSI)
+            cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), COLOR_KOTAK_ISI, 1)
+            # Tag nomor lubang tray di pojok kiri atas
+            cv2.putText(vis, f"#{idx}", (kx1 + 2, ky1 + 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.28, COLOR_KOTAK_ISI, 1, cv2.LINE_AA)
 
             bx1, by1, bx2, by2 = slot["bibit_box"]
             label, conf = slot["preds"].get(model_name, ("?", 0))
             
-            # 2. BIBIT TANAMAN: KOTAK HIJAU
-            cv2.rectangle(vis, (bx1, by1), (bx2, by2), COLOR_BIBIT_BOX, 2)
+            # 2. WARNA KOTAK BIBIT DINAMIS SESUAI KELAS (HIJAU / ORANYE / MERAH)
+            box_col = CLASS_COLORS.get(label, (0, 220, 0))
+            cv2.rectangle(vis, (bx1, by1), (bx2, by2), box_col, 2)
             
-            # 3. Label Klasifikasi
-            txt = f"{label} {conf:.0%}"
+            # 3. LABEL BANNER SOLID WARNA KELAS
+            disp_name = CLASS_DISPLAY_NAMES.get(label, label)
+            txt = f"{disp_name} {conf:.0%}"
             (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)
-            cv2.rectangle(vis, (bx1, max(0, by1 - th - 5)), (bx1 + tw + 3, by1), (20, 20, 20), -1)
+            
+            # Background banner solid warna kelas menempel di pojok kiri atas kotak
+            badge_top = max(0, by1 - th - 5)
+            cv2.rectangle(vis, (bx1, badge_top), (bx1 + tw + 4, by1), box_col, -1)
+            
+            # Teks tebal putih (atau hitam jika oranye/kuning)
+            text_col = (0, 0, 0) if label == "etiolasi_ringan" else (255, 255, 255)
             cv2.putText(vis, txt, (bx1 + 2, by1 - 3),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (50, 255, 50), 1, cv2.LINE_AA)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, text_col, 1, cv2.LINE_AA)
         else:
             # 4. KOTAK TRAY KOSONG: WARNA ABU-ABU + 'EMPTY'
-            cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), COLOR_KOTAK_EMPTY, 2)
+            cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), COLOR_KOTAK_EMPTY, 1)
+            cv2.putText(vis, f"#{idx}", (kx1 + 2, ky1 + 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.28, COLOR_KOTAK_EMPTY, 1, cv2.LINE_AA)
             cx, cy = (kx1 + kx2) // 2, (ky1 + ky2) // 2
             cv2.putText(vis, "EMPTY", (cx - 18, cy + 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.33, COLOR_EMPTY_TXT, 1, cv2.LINE_AA)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.32, COLOR_EMPTY_TXT, 1, cv2.LINE_AA)
 
     return vis
 

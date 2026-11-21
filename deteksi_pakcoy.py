@@ -30,6 +30,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 YOLO_WEIGHTS = os.path.join(BASE_DIR, "exp_pakcoy_yolo26_seg_v4", "weights", "best.pt")
 
 MOBILENET_MODELS = {
+    "MobileNetV2 Optimasi (Terbaru)": os.path.join(BASE_DIR, "mobilenetv2_pakcoy_opt.h5"),
     "MobileNetV2 Murni (Terbaru)": os.path.join(BASE_DIR, "mobilenetv2_pakcoy_murni.h5"),
     "MobileNetV2 Augmented":        os.path.join(BASE_DIR, "mobilenetv2_pakcoy_augmented.h5"),
     "MobileNetV2 V3 (Terbaru)":     os.path.join(BASE_DIR, "mobilenetv2_v3_terbaru.h5"),
@@ -43,6 +44,12 @@ CLASS_COLORS  = {
     "etiolasi_ringan":  "#f39c12",   # oranye
     "etiolasi_berat":   "#e74c3c",   # merah
     "empty":            "#95a5a6",   # abu-abu
+}
+CLASS_DISPLAY_NAMES = {
+    "normal":          "Normal",
+    "etiolasi_ringan": "Et. Ringan",
+    "etiolasi_berat":  "Et. Berat",
+    "empty":           "Empty",
 }
 CLASS_ID_MAP  = {name: i for i, name in enumerate(CLASS_NAMES)}
 
@@ -156,8 +163,15 @@ def run_pipeline(image_pil: Image.Image,
     n_plants = len(all_results)
 
     # ── 3. BUILD ANNOTATED IMAGE ───────────────────────────────
-    # Gunakan V3 (terbaru) sebagai label utama di gambar
-    PRIMARY_MODEL = "MobileNetV2 V3 (Terbaru)"
+    # Prioritaskan model optimasi terbaru / murni sebagai label utama di gambar
+    preferred_models = [
+        "MobileNetV2 Optimasi (Terbaru)",
+        "MobileNetV2 Murni (Terbaru)",
+        "MobileNetV2 Augmented",
+        "MobileNetV2 V3 (Terbaru)"
+    ]
+    PRIMARY_MODEL = next((m for m in preferred_models if m in mobilenet_models), list(mobilenet_models.keys())[0] if mobilenet_models else "None")
+    
     vis = img_rgb.copy()
     for item in all_results:
         x1, y1, x2, y2 = item["bbox"]
@@ -165,16 +179,22 @@ def run_pipeline(image_pil: Image.Image,
                               PRIMARY_MODEL,
                               list(item["mob_preds"].values())[0]
                           )
-        color_hex = CLASS_COLORS.get(label, "#ffffff")
+        display_label = CLASS_DISPLAY_NAMES.get(label, label)
+        color_hex = CLASS_COLORS.get(label, "#2ecc71")
         color_rgb = tuple(int(color_hex.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
-        # Kotak
+        
+        # Kotak tanaman
         cv2.rectangle(vis, (x1, y1), (x2, y2), color_rgb, 2)
-        # Label background
-        txt  = f"{label} {conf:.0%}"
+        
+        # Solid banner badge label di pojok kiri atas kotak
+        txt  = f"{display_label} {conf:.0%}"
         (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-        cv2.rectangle(vis, (x1, y1 - th - 6), (x1 + tw + 4, y1), color_rgb, -1)
-        cv2.putText(vis, txt, (x1 + 2, y1 - 3),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+        badge_top = max(0, y1 - th - 6)
+        cv2.rectangle(vis, (x1, badge_top), (x1 + tw + 6, y1), color_rgb, -1)
+        
+        text_col = (0, 0, 0) if label == "etiolasi_ringan" else (255, 255, 255)
+        cv2.putText(vis, txt, (x1 + 3, y1 - 3),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, text_col, 1, cv2.LINE_AA)
 
     annotated_pil = Image.fromarray(vis)
 
