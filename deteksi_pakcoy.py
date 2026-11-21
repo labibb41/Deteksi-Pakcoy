@@ -342,13 +342,15 @@ with gr.Blocks(title="🌿 Deteksi Pakcoy", css=css, theme=gr.themes.Soft()) as 
         outputs=[out_image, out_status, out_v1, out_v2, out_v3, out_crops],
     )
 
-    gr.Examples(
-        examples=[
-            [r"C:/Users/nokle/.gemini/antigravity/brain/a46dc76f-6640-4e08-9cd9-f2eadb2ed406/.user_uploaded/media_1795246646257_1e1fb3b7.jpg", 0.25, 0.45],
-        ],
-        inputs=[inp_image, slider_conf, slider_iou],
-        label="📌 Contoh Gambar",
-    )
+    test_img_path = os.path.join(BASE_DIR, "test_tray.jpg")
+    examples_list = [[test_img_path, 0.25, 0.45]] if os.path.exists(test_img_path) else []
+    
+    if examples_list:
+        gr.Examples(
+            examples=examples_list,
+            inputs=[inp_image, slider_conf, slider_iou],
+            label="📌 Contoh Gambar",
+        )
 
 if __name__ == "__main__":
     print("🚀 Launching Gradio App...")
