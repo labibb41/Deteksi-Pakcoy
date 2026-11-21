@@ -1,17 +1,8 @@
 """
 ==============================================================
   DETEKSI PAKCOY - CLI TERMINAL VERSION
-  Pipeline: YOLO26n-Seg  -->  MobileNetV2 (5 Model Klasifikasi)
-  - Model:
-      1. MobileNetV2 V1 (Lama)
-      2. MobileNetV2 V2 (Baru)
-      3. MobileNetV2 V3 (Terbaru)
-      4. Model Top Pakcoy
-      5. Model Top Pakcoy V3
-  - Pewarnaan Kotak:
-      * Kotak Tray Berisi Bibit  : BIRU
-      * Bibit Tanaman            : HIJAU + Label Klasifikasi
-      * Kotak Tray Kosong (Empty): ABU-ABU + Tulisan 'EMPTY'
+  Pipeline: YOLO26n-Seg  -->  MobileNetV2
+  Termasuk Model Baru Hasil Training: mobilenetv2_pakcoy_augmented.h5
 ==============================================================
 """
 
@@ -38,16 +29,16 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 YOLO_WEIGHTS = os.path.join(BASE_DIR, "exp_pakcoy_yolo26_seg_v4", "weights", "best.pt")
 
-# 5 MODEL KLASIFIKASI LENGKAP
+# DAFTAR MODEL KLASIFIKASI (Model Augmented baru di urutan pertama!)
 MOBILENET_MODELS = {
-    "V1 (Lama)":       os.path.join(BASE_DIR, "mobilenetv2_v1_lama.h5"),
-    "V2 (Baru)":       os.path.join(BASE_DIR, "mobilenetv2_v2_baru.h5"),
-    "V3 (Terbaru)":    os.path.join(BASE_DIR, "mobilenetv2_v3_terbaru.h5"),
-    "Top Pakcoy":      os.path.join(BASE_DIR, "model_top_pakcoy.h5"),
-    "Top Pakcoy V3":   os.path.join(BASE_DIR, "model_top_pakcoy_v3.h5"),
+    "Augmented (Baru)": os.path.join(BASE_DIR, "mobilenetv2_pakcoy_augmented.h5"),
+    "V3 (Terbaru)":     os.path.join(BASE_DIR, "mobilenetv2_v3_terbaru.h5"),
+    "Top Pakcoy V3":    os.path.join(BASE_DIR, "model_top_pakcoy_v3.h5"),
+    "Top Pakcoy":       os.path.join(BASE_DIR, "model_top_pakcoy.h5"),
+    "V2 (Baru)":        os.path.join(BASE_DIR, "mobilenetv2_v2_baru.h5"),
+    "V1 (Lama)":        os.path.join(BASE_DIR, "mobilenetv2_v1_lama.h5"),
 }
 
-# 3 Kelas sesuai output shape model (None, 3)
 CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
 
 # ── WARNA (Format BGR OpenCV) ──
@@ -68,15 +59,15 @@ from ultralytics import YOLO
 yolo_model = YOLO(YOLO_WEIGHTS)
 print("   ✅ YOLO berhasil dimuat! Kelas YOLO:", yolo_model.names, flush=True)
 
-print("\n⏳ [2/2] Loading 5 Model Klasifikasi TensorFlow...", flush=True)
+print("\n⏳ [2/2] Loading Model Klasifikasi MobileNetV2...", flush=True)
 import tensorflow as tf
 mobilenet_models = {}
 for name, path in MOBILENET_MODELS.items():
     if os.path.exists(path):
         mobilenet_models[name] = tf.keras.models.load_model(path, compile=False)
-        print(f"   ✅ Model {name:<16} loaded ({os.path.basename(path)})", flush=True)
+        print(f"   ✅ Model {name:<18} loaded ({os.path.basename(path)})", flush=True)
     else:
-        print(f"   ⚠️  Model {name:<16} NOT FOUND: {path}", flush=True)
+        print(f"   ⚠️  Model {name:<18} NOT FOUND: {path}", flush=True)
 
 print("─"*65, flush=True)
 
@@ -112,13 +103,6 @@ def choose_file_dialog():
 
 
 def draw_detection_view(orig_img, tray_slots, model_name):
-    """
-    Menggambar hasil deteksi:
-    - Kotak BIRU untuk slot tray yang BERISI bibit
-    - Kotak ABU-ABU untuk slot tray yang KOSONG (EMPTY)
-    - Kotak HIJAU untuk bibit tanaman di dalamnya + Label klasifikasi
-    - Tulisan 'EMPTY' di tengah kotak yang kosong
-    """
     vis = orig_img.copy()
     h, w = vis.shape[:2]
 
@@ -130,19 +114,19 @@ def draw_detection_view(orig_img, tray_slots, model_name):
             cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), COLOR_KOTAK_ISI, 2)
 
             bx1, by1, bx2, by2 = slot["bibit_box"]
-            label, conf = slot["preds"][model_name]
+            label, conf = slot["preds"].get(model_name, ("?", 0))
             
             # 2. BIBIT TANAMAN: KOTAK HIJAU
             cv2.rectangle(vis, (bx1, by1), (bx2, by2), COLOR_BIBIT_BOX, 2)
             
-            # 3. Label Hasil Klasifikasi
+            # 3. Label Klasifikasi
             txt = f"{label} {conf:.0%}"
             (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1)
             cv2.rectangle(vis, (bx1, max(0, by1 - th - 5)), (bx1 + tw + 3, by1), (20, 20, 20), -1)
             cv2.putText(vis, txt, (bx1 + 2, by1 - 3),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.35, (50, 255, 50), 1, cv2.LINE_AA)
         else:
-            # 4. KOTAK TRAY KOSONG: WARNA ABU-ABU + TULISAN 'EMPTY'
+            # 4. KOTAK TRAY KOSONG: WARNA ABU-ABU + 'EMPTY'
             cv2.rectangle(vis, (kx1, ky1), (kx2, ky2), COLOR_KOTAK_EMPTY, 2)
             cx, cy = (kx1 + kx2) // 2, (ky1 + ky2) // 2
             cv2.putText(vis, "EMPTY", (cx - 18, cy + 4),
@@ -155,14 +139,14 @@ def draw_detection_view(orig_img, tray_slots, model_name):
     cv2.addWeighted(overlay, 0.8, vis, 0.2, 0, vis)
     cv2.line(vis, (0, bar_h), (w, bar_h), COLOR_KOTAK_ISI, 2)
 
-    title_text = f"MODEL: {model_name}  |  Kotak Isi: BIRU  |  Bibit: HIJAU  |  Kosong: ABU-ABU  |  [1-5]=Ganti Model  [ESC]=Tutup"
+    title_text = f"MODEL AKTIF: [{model_name}]  |  [1]=Augmented Baru  [2]=V3  [3]=Top V3  [ESC]=Tutup"
     cv2.putText(vis, title_text, (10, 26),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 230, 255), 1, cv2.LINE_AA)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 230, 255), 1, cv2.LINE_AA)
     return vis
 
 
 def show_interactive_display(views_dict, orig_shape):
-    win_name = "Hasil Deteksi Pakcoy - [1:V1, 2:V2, 3:V3, 4:Top, 5:Top V3, ESC:Tutup]"
+    win_name = "Hasil Deteksi Pakcoy YOLO26n + MobileNetV2 - [1-6: Ganti Model, ESC: Tutup]"
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
 
     orig_h, orig_w = orig_shape[:2]
@@ -170,7 +154,6 @@ def show_interactive_display(views_dict, orig_shape):
     disp_w = int(orig_w * (disp_h / orig_h))
     cv2.resizeWindow(win_name, disp_w, disp_h)
 
-    # Mapping tombol angka ke nama model
     model_keys = list(views_dict.keys())
     key_map = {
         ord('1'): model_keys[0] if len(model_keys) > 0 else None,
@@ -178,16 +161,19 @@ def show_interactive_display(views_dict, orig_shape):
         ord('3'): model_keys[2] if len(model_keys) > 2 else None,
         ord('4'): model_keys[3] if len(model_keys) > 3 else None,
         ord('5'): model_keys[4] if len(model_keys) > 4 else None,
+        ord('6'): model_keys[5] if len(model_keys) > 5 else None,
     }
 
-    current_model = "V3 (Terbaru)" if "V3 (Terbaru)" in views_dict else model_keys[0]
+    # Default langsung tampilkan model baru (Augmented)
+    current_model = "Augmented (Baru)" if "Augmented (Baru)" in views_dict else model_keys[0]
 
     print("\n🖥️  Jendela tampilan Python telah terbuka!")
-    print("   👉 Tekan tombol '1' : Hasil Model V1 (Lama)")
-    print("   👉 Tekan tombol '2' : Hasil Model V2 (Baru)")
-    print("   👉 Tekan tombol '3' : Hasil Model V3 (Terbaru)")
-    print("   👉 Tekan tombol '4' : Hasil Model Top Pakcoy")
-    print("   👉 Tekan tombol '5' : Hasil Model Top Pakcoy V3")
+    print("   👉 Tekan tombol '1' : ⭐ Model Augmented (Baru dari Colab)")
+    print("   👉 Tekan tombol '2' : Model V3 (Terbaru)")
+    print("   👉 Tekan tombol '3' : Model Top Pakcoy V3")
+    print("   👉 Tekan tombol '4' : Model Top Pakcoy")
+    print("   👉 Tekan tombol '5' : Model V2 (Baru)")
+    print("   👉 Tekan tombol '6' : Model V1 (Lama)")
     print("   👉 Tekan tombol 'ESC' atau 'Q' untuk menutup jendela", flush=True)
 
     while True:
@@ -219,7 +205,7 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
 
     h, w = orig_bgr.shape[:2]
     print(f"\n📷 File Gambar : {os.path.basename(img_path)} ({w}x{h} px)", flush=True)
-    print("🔍 Menjalankan deteksi YOLO26n-Seg...", flush=True)
+    print("🔍 Menjalankan deteksi objek dengan YOLO26n-Seg...", flush=True)
 
     # 1. YOLO Inference
     results = yolo_model(orig_bgr, conf=conf_thresh, iou=iou_thresh, verbose=False)[0]
@@ -246,7 +232,7 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     print(f"   👉 Deteksi 'kotak' slot tray : {len(kotak_boxes)} titik", flush=True)
     print(f"   👉 Deteksi 'bibit' tanaman   : {len(bibit_boxes)} titik", flush=True)
 
-    # 2. Urutkan kotak tray secara berurutan
+    # 2. Urutkan kotak tray
     if kotak_boxes:
         kotak_boxes = sorted(kotak_boxes, key=lambda b: (b[1] // 40, b[0]))
     else:
@@ -298,10 +284,10 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     n_empty = len(tray_slots) - n_bibit_matched
     print(f"✅ Pencocokan: {n_bibit_matched} slot berisi bibit, {n_empty} slot kosong (EMPTY)!", flush=True)
 
-    # 4. Prediksi 5 Model sekaligus
+    # 4. Prediksi Model
     if crops_to_classify:
         batch_x = np.stack(crops_to_classify, axis=0)
-        print("🤖 Mengklasifikasi bibit tanaman pada 5 Model...", flush=True)
+        print("🤖 Mengklasifikasi bibit tanaman pada model MobileNetV2...", flush=True)
 
         for m_name, model in mobilenet_models.items():
             preds = model.predict(batch_x, batch_size=32, verbose=0)
@@ -312,59 +298,59 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
                 lbl = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else f"class_{idx}"
                 slot_item["preds"][m_name] = (lbl, float(conf))
 
-    # Untuk slot kosong, set prediksinya ke 'empty'
+    # Untuk slot kosong
     for slot in tray_slots:
         if not slot["has_bibit"]:
             for m_name in mobilenet_models.keys():
                 slot["preds"][m_name] = ("empty", 1.0)
 
-    # 5. Tampilkan Rekapitulasi di Terminal (5 Model)
+    # 5. Tampilkan Rekapitulasi di Terminal
     m_keys = list(mobilenet_models.keys())
-    print("\n" + "="*85, flush=True)
+    print("\n" + "="*95, flush=True)
     print(f"  📊 REKAPITULASI HASIL ANALISIS TRAY ({len(tray_slots)} SLOT TITIK TANAM)", flush=True)
-    print("="*85, flush=True)
+    print("="*95, flush=True)
     
     header_cols = f"{'Kondisi / Kelas':<16}"
-    for mk in m_keys:
-        header_cols += f" | {mk:<12}"
+    for mk in m_keys[:4]:  # Tampilkan 4 model utama agar tidak terlalu lebar
+        header_cols += f" | {mk:<16}"
     print(header_cols, flush=True)
-    print("-" * 85, flush=True)
+    print("-" * len(header_cols), flush=True)
 
     counters = {m: Counter([s["preds"].get(m, ("?", 0))[0] for s in tray_slots]) for m in m_keys}
     all_classes_display = ["normal", "etiolasi_ringan", "etiolasi_berat", "empty"]
 
     for c in all_classes_display:
         row = f"{c:<16}"
-        for mk in m_keys:
+        for mk in m_keys[:4]:
             cnt = counters[mk].get(c, 0)
             pct = cnt / len(tray_slots) * 100 if tray_slots else 0
-            row += f" | {cnt:3d} ({pct:4.1f}%)"
+            row += f" | {cnt:3d} ({pct:4.1f}%)    "
         print(row, flush=True)
 
-    print("-" * 85, flush=True)
+    print("-" * len(header_cols), flush=True)
     total_row = f"{'TOTAL SLOT':<16}"
-    for _ in m_keys:
-        total_row += f" | {len(tray_slots):3d} (100%) "
+    for _ in m_keys[:4]:
+        total_row += f" | {len(tray_slots):3d} (100.0%)  "
     print(total_row, flush=True)
-    print("="*85, flush=True)
+    print("="*95, flush=True)
 
     # 6. Sampel Detail 12 Slot Pertama
     print(f"\n📋 Sampel Detail 12 Slot Tray Pertama:", flush=True)
     sample_header = f"{'Slot':<6} | {'Status':<9}"
-    for mk in m_keys:
-        sample_header += f" | {mk[:11]:<11}"
+    for mk in m_keys[:3]:
+        sample_header += f" | {mk[:15]:<15}"
     print(sample_header, flush=True)
     print("-" * len(sample_header), flush=True)
 
     for s in tray_slots[:12]:
         st = "ADA BIBIT" if s["has_bibit"] else "KOSONG"
         row = f"#{s['slot_idx']:<5} | {st:<9}"
-        for mk in m_keys:
+        for mk in m_keys[:3]:
             if s["has_bibit"]:
                 lbl, conf = s["preds"].get(mk, ("?", 0))
                 row += f" | {lbl[:3]} {conf:.0%}"
             else:
-                row += f" | empty     "
+                row += f" | empty         "
         print(row, flush=True)
 
     if len(tray_slots) > 12:
