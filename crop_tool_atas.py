@@ -108,6 +108,10 @@ state = {
     "is_drawing_crop": False,
     # Tombol klik yang dipilih dari header
     "header_action_clicked": None,
+    # Flash animasi saat crop berhasil disimpan
+    "flash_box": None,        # (bx1, by1, bx2, by2, color, label)
+    "flash_timer": 0,         # durasi kilat konfirmasi
+    "show_past_boxes": False, # DEFAULT FALSE: Tampilan bersih tanpa kotak numpuk!
 }
 
 
@@ -517,30 +521,36 @@ def main():
             state["canvas_nw"] = nw
             state["canvas_nh"] = nh
 
-            # 3. Gambar kotak bibit yang SUDAH DICROP SEBELUMNYA (JEJAK KOTAK PERSISTEN)
-            current_crops = labeled_history.get(img_key, [])
-            for c_idx, crop_item in enumerate(current_crops, start=1):
-                _, c_cls, bx1, by1, bx2, by2 = crop_item
-                # Konversi koordinat asli gambar ke koordinat canvas
-                cx1 = int(ox + (bx1 - rx1) * scale)
-                cy1 = int(oy + (by1 - ry1) * scale)
-                cx2 = int(ox + (bx2 - rx1) * scale)
-                cy2 = int(oy + (by2 - ry1) * scale)
+            # 3. TAMPILKAN EFEK KILAT (FLASH) SAAT ANGKA 1, 2, 3 DITEKAN
+            if state["flash_timer"] > 0 and state["flash_box"]:
+                fbx1, fby1, fbx2, fby2, fcol, flbl = state["flash_box"]
+                fcx1 = int(ox + (fbx1 - rx1) * scale)
+                fcy1 = int(oy + (fby1 - ry1) * scale)
+                fcx2 = int(ox + (fbx2 - rx1) * scale)
+                fcy2 = int(oy + (fby2 - ry1) * scale)
 
-                col = CLASS_COLOR.get(c_cls, (255, 255, 255))
-                # Border hitam 4px + border warna 2px agar sangat jelas di background apapun
-                cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), (0, 0, 0), 4)
-                cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), col, 2)
+                # Kotak kilat tebal + tulisan konfirmasi
+                cv2.rectangle(canvas, (fcx1, fcy1), (fcx2, fcy2), (255, 255, 255), 4)
+                cv2.rectangle(canvas, (fcx1, fcy1), (fcx2, fcy2), fcol, 3)
+                badge_w = len(flbl) * 8 + 12
+                top_badge = max(oy, fcy1 - 22)
+                cv2.rectangle(canvas, (fcx1, top_badge), (fcx1 + badge_w, top_badge + 20), (0, 0, 0), -1)
+                cv2.rectangle(canvas, (fcx1, top_badge), (fcx1 + badge_w, top_badge + 20), fcol, 1)
+                cv2.putText(canvas, flbl, (fcx1 + 4, top_badge + 15),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
+                state["flash_timer"] -= 1
 
-                # Badge nomor dan nama kelas
-                lbl_badge = f"#{c_idx} {c_cls[:6].upper()}"
-                bw_badge = len(lbl_badge) * 8 + 8
-                bh_badge = 18
-                top_badge = max(oy, cy1 - bh_badge)
-                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + bh_badge), (0, 0, 0), -1)
-                cv2.rectangle(canvas, (cx1, top_badge), (cx1 + bw_badge, top_badge + bh_badge), col, 1)
-                cv2.putText(canvas, lbl_badge, (cx1 + 4, top_badge + 13),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1, cv2.LINE_AA)
+            # (Opsional) Tampilkan jejak tipis hanya jika user mengaktifkan [H]
+            if state["show_past_boxes"]:
+                current_crops = labeled_history.get(img_key, [])
+                for c_idx, crop_item in enumerate(current_crops, start=1):
+                    _, c_cls, bx1, by1, bx2, by2 = crop_item
+                    cx1 = int(ox + (bx1 - rx1) * scale)
+                    cy1 = int(oy + (by1 - ry1) * scale)
+                    cx2 = int(ox + (bx2 - rx1) * scale)
+                    cy2 = int(oy + (by2 - ry1) * scale)
+                    col = CLASS_COLOR.get(c_cls, (255, 255, 255))
+                    cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), col, 1)
 
             # 4. Gambar kotak crop yang SEDANG ditarik / PENDING
             if state["crop_state"] in ("DRAWING", "PENDING"):
@@ -598,8 +608,11 @@ def main():
                                             clicked_action, dataset_folder, stats, labeled_history)
                     if item:
                         tot = len(labeled_history[img_key])
-                        saved_msg = f"✅ TERSIMPAN: [{clicked_action.upper()}] #{tot} (Total foto ini: {tot} bibit)"
-                        saved_timer = 50
+                        saved_msg = f"✅ TERSIMPAN: [{clicked_action.upper()}] (Foto ini: {tot} bibit)"
+                        saved_timer = 40
+                        # Efek kilat penanda sesaat di bibit
+                        state["flash_box"] = (bx1, by1, bx2, by2, CLASS_COLOR[clicked_action], f"✅ {clicked_action.upper()}")
+                        state["flash_timer"] = 12
                         print(f"✅ [{clicked_action.upper()}] #{tot} Tersimpan: {os.path.basename(item[0])}")
                     state["crop_state"] = "IDLE"
                     continue
@@ -618,8 +631,11 @@ def main():
                                             class_choice, dataset_folder, stats, labeled_history)
                     if item:
                         tot = len(labeled_history[img_key])
-                        saved_msg = f"✅ TERSIMPAN: [{class_choice.upper()}] #{tot} (Total foto ini: {tot} bibit)"
-                        saved_timer = 50
+                        saved_msg = f"✅ TERSIMPAN: [{class_choice.upper()}] (Foto ini: {tot} bibit)"
+                        saved_timer = 40
+                        # Efek kilat penanda sesaat di bibit
+                        state["flash_box"] = (bx1, by1, bx2, by2, CLASS_COLOR[class_choice], f"✅ {class_choice.upper()}")
+                        state["flash_timer"] = 12
                         print(f"✅ [{class_choice.upper()}] #{tot} Tersimpan: {os.path.basename(item[0])}")
                     state["crop_state"] = "IDLE"
                     continue
@@ -706,6 +722,12 @@ def main():
                 state["center_x"] = max(0.0, state["center_x"] - 0.05 / state["zoom"])
             elif key in (83, 2555904): # Panah Kanan
                 state["center_x"] = min(1.0, state["center_x"] + 0.05 / state["zoom"])
+
+            # TOGGLE LIHAT JEJAK: H
+            elif key in (ord('h'), ord('H')):
+                state["show_past_boxes"] = not state["show_past_boxes"]
+                saved_msg = "Jejak kotak: AKTIF" if state["show_past_boxes"] else "Jejak kotak: NONAKTIF (Tampilan Bersih)"
+                saved_timer = 35
 
             # UNDO CROP TERAKHIR: Z
             elif key in (ord('z'), ord('Z')):
