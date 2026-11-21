@@ -2,7 +2,9 @@
 ==============================================================
   DETEKSI PAKCOY - CLI TERMINAL VERSION
   Pipeline: YOLO26n-Seg  -->  MobileNetV2 (V1, V2, V3)
-  Dengan Pemilih File (Pop-up Explorer / Drag & Drop / Default)
+  - Tanpa Simpan File (Langsung Tampil di Jendela Python)
+  - Kotak Bounding Box Warna BIRU
+  - Tampilan Interaktif Model V1, V2, V3
 ==============================================================
 """
 
@@ -23,7 +25,6 @@ import cv2
 import numpy as np
 from PIL import Image
 from collections import Counter
-from datetime import datetime
 
 # Path dasar
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,11 +39,10 @@ MOBILENET_MODELS = {
 
 # 3 Kelas sesuai output shape model (None, 3)
 CLASS_NAMES = ["etiolasi_berat", "etiolasi_ringan", "normal"]
-CLASS_COLORS = {
-    "normal":           (50, 205, 50),    # Hijau (BGR)
-    "etiolasi_ringan":  (0, 165, 255),    # Oranye
-    "etiolasi_berat":   (0, 0, 230),      # Merah
-}
+
+# ── WARNA KOTAK: BIRU (Format BGR OpenCV) ──
+BOX_COLOR = (255, 120, 0)       # Biru Cerah (Sky/Royal Blue)
+BOX_THICKNESS = 2
 
 # ─────────────────────────────────────────────────────────────
 #  IMPORT & LOAD MODELS
@@ -70,7 +70,6 @@ print("─"*65, flush=True)
 
 
 def clean_path(p):
-    """Membersihkan path dari format drag-and-drop PowerShell (& '...')."""
     p = p.strip()
     if p.startswith('&'):
         p = p[1:].strip()
@@ -79,7 +78,6 @@ def clean_path(p):
 
 
 def choose_file_dialog():
-    """Membuka jendela pop-up File Explorer standar Windows untuk memilih gambar."""
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -101,6 +99,94 @@ def choose_file_dialog():
         return ""
 
 
+def draw_detection_view(orig_img, boxes, predictions, model_title):
+    """Menggambar kotak BIRU dan teks label klasifikasi per model."""
+    vis = orig_img.copy()
+    h, w = vis.shape[:2]
+
+    # Gambar setiap bounding box dengan WARNA BIRU
+    for i, (x1, y1, x2, y2) in enumerate(boxes):
+        label, conf = predictions[i]
+        
+        # Kotak BIRU
+        cv2.rectangle(vis, (x1, y1), (x2, y2), BOX_COLOR, BOX_THICKNESS)
+        
+        # Label teks di atas kotak
+        txt = f"#{i+1} {label} {conf:.0%}"
+        (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)
+        # Background teks semi gelap agar jelas dibaca
+        cv2.rectangle(vis, (x1, max(0, y1 - th - 6)), (x1 + tw + 4, y1), (30, 30, 30), -1)
+        # Teks putih
+        cv2.putText(vis, txt, (x1 + 2, y1 - 3),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1, cv2.LINE_AA)
+
+    # Header Bar di atas gambar
+    bar_h = 42
+    overlay = vis.copy()
+    cv2.rectangle(overlay, (0, 0), (w, bar_h), (20, 20, 20), -1)
+    cv2.addWeighted(overlay, 0.8, vis, 0.2, 0, vis)
+    cv2.line(vis, (0, bar_h), (w, bar_h), BOX_COLOR, 2)
+
+    title_text = f"MODEL: {model_title}  |  Kotak: BIRU  |  [1]=V1  [2]=V2  [3]=V3  [4]=Jejer 3  [ESC/Q]=Tutup"
+    cv2.putText(vis, title_text, (10, 26),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 230, 255), 1, cv2.LINE_AA)
+    return vis
+
+
+def show_interactive_display(views_dict, orig_shape):
+    """Menampilkan jendela GUI OpenCV dengan tombol switch 1/2/3/4/ESC."""
+    win_name = "Hasil Deteksi Pakcoy (Kotak Biru) - [1:V1, 2:V2, 3:V3, 4:Jejer Tiga, ESC:Tutup]"
+    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
+
+    # Ukuran awal jendela yang nyaman di layar
+    orig_h, orig_w = orig_shape[:2]
+    disp_h = 750
+    disp_w = int(orig_w * (disp_h / orig_h))
+    cv2.resizeWindow(win_name, disp_w, disp_h)
+
+    current_mode = "3"  # Default tampilkan V3 (Terbaru)
+
+    print("\n🖥️  Jendela tampilan Python telah terbuka!")
+    print("   👉 Tekan tombol '1' pada jendela untuk melihat hasil Model V1 (Lama)")
+    print("   👉 Tekan tombol '2' pada jendela untuk melihat hasil Model V2 (Baru)")
+    print("   👉 Tekan tombol '3' pada jendela untuk melihat hasil Model V3 (Terbaru)")
+    print("   👉 Tekan tombol '4' pada jendela untuk melihat ke-3 model berjajar (side-by-side)")
+    print("   👉 Tekan tombol 'ESC' atau 'Q' untuk menutup jendela", flush=True)
+
+    # Buat view berjajar 3 model jika user tekan '4'
+    v1_img = views_dict.get("V1 (Lama)")
+    v2_img = views_dict.get("V2 (Baru)")
+    v3_img = views_dict.get("V3 (Terbaru)")
+    side_by_side = None
+    if v1_img is not None and v2_img is not None and v3_img is not None:
+        side_by_side = np.hstack([v1_img, v2_img, v3_img])
+
+    while True:
+        if current_mode == "1" and v1_img is not None:
+            cv2.imshow(win_name, v1_img)
+        elif current_mode == "2" and v2_img is not None:
+            cv2.imshow(win_name, v2_img)
+        elif current_mode == "3" and v3_img is not None:
+            cv2.imshow(win_name, v3_img)
+        elif current_mode == "4" and side_by_side is not None:
+            cv2.imshow(win_name, side_by_side)
+
+        key = cv2.waitKey(50) & 0xFF
+        if key in (27, ord('q'), ord('Q')):  # ESC atau Q
+            break
+        elif key == ord('1'):
+            current_mode = "1"
+        elif key == ord('2'):
+            current_mode = "2"
+        elif key == ord('3'):
+            current_mode = "3"
+        elif key == ord('4'):
+            current_mode = "4"
+
+    cv2.destroyAllWindows()
+    print("🚪 Jendela tampilan ditutup. (Gambar TIDAK disimpan ke disk sesuai permintaan).", flush=True)
+
+
 def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     img_path = clean_path(img_path)
 
@@ -115,7 +201,6 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
 
     h, w = orig_bgr.shape[:2]
     print(f"\n📷 File Gambar : {os.path.basename(img_path)} ({w}x{h} px)", flush=True)
-    print(f"⚙️  Threshold   : Conf={conf_thresh}, IoU={iou_thresh}", flush=True)
     print("🔍 Menjalankan deteksi tanaman dengan YOLO...", flush=True)
 
     # 1. YOLO Inference
@@ -168,19 +253,7 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
             for idx, conf in zip(pred_indices, pred_confs)
         ]
 
-    # 4. Gambar anotasi visual
-    vis_img = orig_bgr.copy()
-    primary_model_name = "V3 (Terbaru)" if "V3 (Terbaru)" in model_predictions else list(model_predictions.keys())[0]
-
-    for i, (x1, y1, x2, y2) in enumerate(valid_boxes):
-        label, conf = model_predictions[primary_model_name][i]
-        col = CLASS_COLORS.get(label, (255, 255, 255))
-        cv2.rectangle(vis_img, (x1, y1), (x2, y2), col, 2)
-        txt = f"#{i+1} {label[:3]} {conf:.0%}"
-        cv2.putText(vis_img, txt, (x1, max(14, y1 - 4)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, col, 1, cv2.LINE_AA)
-
-    # 5. Tampilkan Rekapitulasi Perbandingan Model
+    # 4. Tampilkan Rekapitulasi di Terminal
     print("\n" + "="*70, flush=True)
     print(f"  📊 REKAPITULASI HASIL KLASIFIKASI ({len(valid_boxes)} TANAMAN)", flush=True)
     print("="*70, flush=True)
@@ -200,25 +273,16 @@ def process_image(img_path, conf_thresh=0.25, iou_thresh=0.45):
     print(f"{'TOTAL':<18} | {len(valid_boxes):4d} (100.0%) | {len(valid_boxes):4d} (100.0%) | {len(valid_boxes):4d} (100.0%)", flush=True)
     print("="*70, flush=True)
 
-    # 6. Sampel Detail 15 Tanaman Pertama
-    print(f"\n📋 Sampel Detail 15 Titik Pertama:", flush=True)
-    print(f"{'#':<4} | {'V1 (Lama)':<22} | {'V2 (Baru)':<22} | {'V3 (Terbaru)':<22}", flush=True)
-    print("-" * 75, flush=True)
-    for i in range(min(15, len(valid_boxes))):
-        v1_s = f"{model_predictions['V1 (Lama)'][i][0]} ({model_predictions['V1 (Lama)'][i][1]:.0%})"
-        v2_s = f"{model_predictions['V2 (Baru)'][i][0]} ({model_predictions['V2 (Baru)'][i][1]:.0%})"
-        v3_s = f"{model_predictions['V3 (Terbaru)'][i][0]} ({model_predictions['V3 (Terbaru)'][i][1]:.0%})"
-        print(f"#{i+1:<3} | {v1_s:<22} | {v2_s:<22} | {v3_s:<22}", flush=True)
+    # 5. Buat visualisasi gambar (Kotak BIRU) per model (TIDAK DISIMPAN KE DISK)
+    views_dict = {}
+    for m_name in ["V1 (Lama)", "V2 (Baru)", "V3 (Terbaru)"]:
+        if m_name in model_predictions:
+            views_dict[m_name] = draw_detection_view(
+                orig_bgr, valid_boxes, model_predictions[m_name], m_name
+            )
 
-    if len(valid_boxes) > 15:
-        print(f"... dan {len(valid_boxes) - 15} titik lainnya.", flush=True)
-
-    # 7. Simpan Gambar Hasil Anotasi
-    out_name = f"hasil_deteksi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-    out_path = os.path.join(BASE_DIR, out_name)
-    cv2.imwrite(out_path, vis_img)
-    print(f"\n💾 Gambar hasil anotasi kotak & label telah disimpan:", flush=True)
-    print(f"   👉 {out_path}", flush=True)
+    # 6. Buka Jendela Interaktif GUI Python Langsung
+    show_interactive_display(views_dict, orig_bgr.shape)
 
 
 def main():
@@ -242,7 +306,6 @@ def main():
             elif p.lower() == 'd':
                 process_image(default_img)
             elif not p:
-                # Buka jendela pop-up File Explorer!
                 print("📂 Membuka jendela pop-up File Explorer... (pilih foto kamu)", flush=True)
                 selected = choose_file_dialog()
                 if selected:
