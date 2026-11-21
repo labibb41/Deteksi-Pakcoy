@@ -540,9 +540,11 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
                 state["flash_timer"] -= 1
 
+            # Ambil riwayat crop untuk foto saat ini
+            current_crops = labeled_history.get(img_key, [])
+
             # (Opsional) Tampilkan jejak tipis hanya jika user mengaktifkan [H]
             if state["show_past_boxes"]:
-                current_crops = labeled_history.get(img_key, [])
                 for c_idx, crop_item in enumerate(current_crops, start=1):
                     _, c_cls, bx1, by1, bx2, by2 = crop_item
                     cx1 = int(ox + (bx1 - rx1) * scale)
