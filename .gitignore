@@ -23,3 +23,8 @@ desktop.ini
 aplikasi_deteksi_pakcoy/
 aplikasiPenyemaianPakcoy/
 
+
+# Large archives and temp datasets
+*.zip
+dataset_samping/
+runs/

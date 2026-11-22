@@ -6,7 +6,12 @@ from ultralytics import YOLO
 
 # 1. Setup Path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_WEIGHTS = os.path.join(BASE_DIR, "runs", "segment", "exp_pakcoy_samping_yolo26_seg_v1", "weights", "best.pt")
+MODEL_CANDIDATES = [
+    os.path.join(BASE_DIR, "exp_pakcoy_samping_yolo26_seg_v1", "weights", "best.pt"),
+    os.path.join(BASE_DIR, "runs", "segment", "exp_pakcoy_samping_yolo26_seg_v1", "weights", "best.pt"),
+]
+
+MODEL_WEIGHTS = next((p for p in MODEL_CANDIDATES if os.path.exists(p)), MODEL_CANDIDATES[0])
 
 if not os.path.exists(MODEL_WEIGHTS):
     print(f"❌ File model tidak ditemukan di: {MODEL_WEIGHTS}")
