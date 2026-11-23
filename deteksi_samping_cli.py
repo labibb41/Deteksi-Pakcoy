@@ -82,11 +82,16 @@ def analyze_side_view(image_path: str, tray_width_cm: float = 66.0, out_path: st
 
     vis = img.copy()
 
-    # Gambar garis tray bawah (garis acuan nol cm)
+    # Gambar 1 Garis Acuan Tunggal Tray Bawah (Garis Baseline 0 cm)
     if tray_box is not None:
-        cv2.rectangle(vis, (int(tray_box[0]), int(tray_box[1])), (int(tray_box[2]), int(tray_box[3])), (255, 200, 0), 2)
-        cv2.putText(vis, "BATAS TRAY (0 cm)", (int(tray_box[0]) + 5, int(tray_box[1]) - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 200, 0), 2)
+        by = int(baseline_y)
+        x_start = int(tray_box[0])
+        x_end = int(tray_box[2])
+        # Garis horizontal batas tray
+        cv2.line(vis, (x_start, by), (x_end, by), (255, 200, 0), 2, cv2.LINE_AA)
+        # Label teks di bawah garis agar tidak menabrak kotak tanaman
+        cv2.putText(vis, "--- BATAS TRAY (0 cm) ---", (x_start + 6, min(h_img - 6, by + 16)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 200, 0), 1, cv2.LINE_AA)
 
     # Urutkan tanaman dari kiri ke kanan
     tanaman_list = sorted(tanaman_list, key=lambda t: t["box"][0])
