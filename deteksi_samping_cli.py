@@ -21,7 +21,7 @@ print("⏳ Loading Model YOLO Sisi Samping (YOLO26n-Seg)...")
 model = YOLO(MODEL_WEIGHTS)
 print(f"✅ Model berhasil dimuat! Kelas: {model.names}")
 
-def analyze_side_view(image_path: str, tray_width_cm: float = 66.0, out_path: str = "hasil_deteksi_samping.jpg"):
+def analyze_side_view(image_path: str, tray_width_cm: float = 66.0, out_path: str = "hasil_deteksi_samping.jpg", show_tray_line: bool = False):
     """
     Analisis sisi samping:
     - Deteksi batang dan batas tray bawah
@@ -82,8 +82,8 @@ def analyze_side_view(image_path: str, tray_width_cm: float = 66.0, out_path: st
 
     vis = img.copy()
 
-    # Gambar 1 Garis Acuan Tunggal Tray Bawah (Garis Baseline 0 cm)
-    if tray_box is not None:
+    # Garis acuan tray bawah (opsional, disembunyikan secara default agar tampilan bersih)
+    if show_tray_line and tray_box is not None:
         by = int(baseline_y)
         x_start = int(tray_box[0])
         x_end = int(tray_box[2])
