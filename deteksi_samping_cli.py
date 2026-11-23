@@ -100,6 +100,8 @@ def analyze_side_view(image_path: str, tray_width_cm: float = 66.0, out_path: st
     print(f"{'No':<4} | {'Posisi X':<10} | {'Tinggi (px)':<12} | {'Tinggi (cm)':<12} | {'Warna Batang':<14} | {'Status'}")
     print("-" * 80)
 
+    placed_badges = []
+
     for idx, t in enumerate(tanaman_list, 1):
         x1, y1, x2, y2 = map(int, t["box"])
         poly = t["poly"]
@@ -154,27 +156,70 @@ def analyze_side_view(image_path: str, tray_width_cm: float = 66.0, out_path: st
         cv2.line(vis, (cx, pangkal_y), (cx, pucuk_y), (255, 255, 255), 1, cv2.LINE_AA)
         cv2.circle(vis, (cx, pucuk_y), 3, (0, 255, 255), -1)
 
-        # Solid Badge Label di atas kotak tanaman
+        # Anti-collision Staggered Badge (Penyusunan label bertingkat agar tidak bertumpuk)
         label_txt = f"{status} {tinggi_cm:.1f}cm"
-        (tw, th), _ = cv2.getTextSize(label_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-        badge_top = max(0, y1 - th - 6)
-        cv2.rectangle(vis, (x1, badge_top), (x1 + tw + 6, y1), color_bgr, -1)
+        font_scale = 0.42
+        font_thick = 1
+        (tw, th), _ = cv2.getTextSize(label_txt, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
+
+        badge_w = tw + 8
+        badge_h = th + 6
+        bx1 = max(4, min(w_img - badge_w - 4, cx - badge_w // 2))
+        bx2 = bx1 + badge_w
+
+        chosen_level = 0
+        best_by1 = max(4, y1 - badge_h - 4)
+        best_by2 = best_by1 + badge_h
+
+        # Cari level bertingkat (0, 1, 2, dst) yang tidak bertabrakan dengan label sebelumnya
+        for level in range(5):
+            cand_by2 = y1 - 4 - (level * (badge_h + 8))
+            cand_by1 = cand_by2 - badge_h
+            if cand_by1 < 4:
+                break
+
+            collision = False
+            for (ox1, oy1, ox2, oy2) in placed_badges:
+                if not (bx2 + 4 < ox1 or bx1 - 4 > ox2 or cand_by2 + 2 < oy1 or cand_by1 - 2 > oy2):
+                    collision = True
+                    break
+
+            if not collision:
+                chosen_level = level
+                best_by1 = cand_by1
+                best_by2 = cand_by2
+                break
+            else:
+                chosen_level = level
+                best_by1 = cand_by1
+                best_by2 = cand_by2
+
+        placed_badges.append((bx1, best_by1, bx2, best_by2))
+
+        # Jika berada di tingkat lebih tinggi (level > 0), gambar garis penunjuk (leader line)
+        if chosen_level > 0:
+            cv2.line(vis, (cx, best_by2), (cx, y1), color_bgr, 1, cv2.LINE_AA)
+            cv2.circle(vis, (cx, y1), 2, color_bgr, -1)
+
+        # Gambar solid badge label
+        cv2.rectangle(vis, (bx1, best_by1), (bx2, best_by2), color_bgr, -1)
         text_color = (0, 0, 0) if status == "Etiolasi Ringan" else (255, 255, 255)
-        cv2.putText(vis, label_txt, (x1 + 3, y1 - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.45, text_color, 1, cv2.LINE_AA)
+        text_y = best_by1 + th + 3
+        cv2.putText(vis, label_txt, (bx1 + 4, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, font_thick, cv2.LINE_AA)
 
     print("=" * 80)
     cv2.imwrite(out_path, vis)
     print(f"✅ Gambar hasil analisis disimpan ke: {out_path}")
 
-    # Tampilkan jendela gambar langsung di layar (jika dijalankan interaktif)
-    try:
-        cv2.imshow("Hasil Deteksi Samping - Pakcoy", vis)
-        print("🖥️  Jendela gambar telah terbuka! (Tekan sembarang tombol pada jendela gambar untuk menutup)")
-        # Beri timeout 1 ms jika di latar belakang, atau tunggu tombol jika di terminal
-        cv2.waitKey(1 if not sys.stdin.isatty() else 0)
-        cv2.destroyAllWindows()
-    except Exception:
-        pass
+    # Tampilkan jendela gambar langsung di layar (jika tidak dalam mode headless)
+    if os.environ.get("HEADLESS") != "1":
+        try:
+            cv2.imshow("Hasil Deteksi Samping - Pakcoy", vis)
+            print("🖥️  Jendela gambar telah terbuka! (Tekan sembarang tombol pada jendela gambar untuk menutup)")
+            cv2.waitKey(1 if not sys.stdin.isatty() else 0)
+            cv2.destroyAllWindows()
+        except Exception:
+            pass
 
     return vis
 
